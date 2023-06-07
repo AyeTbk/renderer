@@ -100,7 +100,9 @@ impl AssetServer {
                                 ];
                                 f32::from_le_bytes(coord_bytes)
                             };
-                            let position = [read_coord(0), read_coord(1), read_coord(2)];
+
+                            // Note: X coordinate is negated to convert from GLTF's right handed coordinate system to our left handed one.
+                            let position = [-read_coord(0), read_coord(1), read_coord(2)];
 
                             vertices.push(Vertex {
                                 position,

@@ -27,6 +27,7 @@ impl Color {
     pub const RED: Color = Color::new(1.0, 0.0, 0.0, 1.0);
     pub const GREEN: Color = Color::new(0.0, 1.0, 0.0, 1.0);
     pub const BLUE: Color = Color::new(0.0, 0.0, 1.0, 1.0);
+    pub const GRUE: Color = Color::new(0.02, 0.04, 0.08, 1.0);
 }
 
 impl Color {

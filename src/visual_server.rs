@@ -4,22 +4,30 @@ use glam::{Affine3A, Mat4, UVec2};
 
 use crate::{
     arena::Handle,
-    asset_server,
+    renderer::RenderMeshCommand,
     scene::{NodeData, NodeId},
-    AssetServer, Camera, Color, Material, Mesh, Renderer, Scene,
+    AssetServer, Camera, Material, Mesh, Renderer, Scene,
 };
 
 pub struct VisualServer {
     renderer: Renderer,
-    camera: RenderCamera,
+    render_camera: RenderCamera,
     render_scene: RenderScene,
 }
 
 impl VisualServer {
     pub fn new(window: &winit::window::Window) -> Self {
+        let mut renderer = Renderer::new(window);
+        let camera_uniform = CameraUniform {
+            view_projection: Camera::default().projection.to_cols_array(),
+        };
+        let render_camera = RenderCamera {
+            uniform_buffer: renderer.create_uniform_buffer(camera_uniform),
+        };
+
         Self {
-            renderer: Renderer::new(window),
-            camera: Default::default(),
+            renderer,
+            render_camera,
             render_scene: Default::default(),
         }
     }
@@ -33,7 +41,24 @@ impl VisualServer {
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
-        self.renderer.render()
+        for mesh_instance in &self.render_scene.mesh_instances {
+            let mesh = self.render_scene.meshes.get(&mesh_instance.mesh).unwrap();
+
+            let render_mesh_commands = mesh.submeshes.iter().map(|submesh| {
+                let material = self.render_scene.materials.get(&submesh.material).unwrap();
+                RenderMeshCommand {
+                    material_bind_group: &material.bind_group,
+                    vertex_buffer: &submesh.vertex_buffer,
+                    index_buffer: &submesh.index_buffer,
+                    index_count: submesh.index_count,
+                }
+            });
+
+            self.renderer
+                .render_meshes(&self.render_camera.uniform_buffer, render_mesh_commands)?;
+        }
+
+        Ok(())
     }
 
     pub fn set_scene(&mut self, scene: Handle<Scene>, asset_server: &AssetServer) {
@@ -105,20 +130,30 @@ impl VisualServer {
     fn register_material(&mut self, handle: Handle<Material>, asset_server: &AssetServer) {
         if !self.render_scene.materials.contains_key(&handle) {
             let material = asset_server.get_material(handle);
-            self.render_scene.materials.insert(
-                handle,
-                RenderMaterial {
-                    base_color: material.base_color.into(),
-                },
-            );
+            let material_uniform = MaterialUniform {
+                base_color: material.base_color.into(),
+            };
+
+            let uniform_buffer = self.renderer.create_uniform_buffer(material_uniform);
+            let bind_group = self.renderer.create_material_bind_group(&uniform_buffer);
+            let render_material = RenderMaterial {
+                bind_group,
+                uniform_buffer,
+            };
+
+            self.render_scene.materials.insert(handle, render_material);
         }
     }
 }
 
-#[derive(Debug, Default)]
 struct RenderCamera {
-    transform: Mat4,
-    projection: Mat4,
+    uniform_buffer: wgpu::Buffer,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct CameraUniform {
+    view_projection: [f32; 16],
 }
 
 #[derive(Default)]
@@ -145,5 +180,13 @@ struct RenderMeshInstance {
 }
 
 struct RenderMaterial {
+    bind_group: wgpu::BindGroup,
+    #[allow(unused)]
+    uniform_buffer: wgpu::Buffer,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct MaterialUniform {
     base_color: [f32; 4],
 }
