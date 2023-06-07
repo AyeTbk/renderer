@@ -1,0 +1,33 @@
+[package]
+name = "renderer"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+
+# Graphics API
+wgpu = "0.16"
+
+# Math types
+glam = "0.24"
+
+# Windowing
+winit = "0.28"
+
+# Loading images
+image = { version = "0.24", default-features = false, features = ["png", "jpeg"] }
+
+# Loading models and scenes
+gltf = "1.1"
+
+# For WGPU logging
+env_logger = "0.10"
+log = "0.4"
+
+# To transmute data safely to upload to GPU
+bytemuck =  { version = "1.13", features = [ "derive" ] }
+
+# To ignore async
+pollster = "0.3"
