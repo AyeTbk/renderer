@@ -4,6 +4,12 @@ struct CameraUniform {
 @group(0) @binding(0)
 var<uniform> camera: CameraUniform;
 
+struct ModelUniform {
+    transform: mat4x4f,
+};
+@group(2) @binding(0)
+var<uniform> model: ModelUniform;
+
 struct VertexInput {
     @location(0) pos: vec3f,
     @location(1) color: vec4f,
@@ -27,7 +33,7 @@ fn vs_main(
     vertex: VertexInput,
 ) -> VertexOutput {
     var out: VertexOutput;
-    out.clip_position = camera.view_projection * vec4f(vertex.pos, 1.0);
+    out.clip_position = camera.view_projection * model.transform * vec4f(vertex.pos, 1.0);
     out.color = vertex.color.xyz;
     return out;
 }

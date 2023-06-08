@@ -19,7 +19,7 @@ impl VisualServer {
     pub fn new(window: &winit::window::Window) -> Self {
         let mut renderer = Renderer::new(window);
         let camera_uniform = CameraUniform {
-            view_projection: Camera::default().projection.to_cols_array(),
+            view_projection: Camera::default().projection_matrix().to_cols_array(),
         };
         let render_camera = RenderCamera {
             uniform_buffer: renderer.create_uniform_buffer(camera_uniform),
@@ -40,14 +40,23 @@ impl VisualServer {
         self.renderer.set_render_size(render_size)
     }
 
+    pub fn set_camera(&mut self, transform: &Affine3A, camera: &Camera) {
+        let uniform = CameraUniform {
+            view_projection: (camera.projection_matrix() * transform.inverse()).to_cols_array(),
+        };
+        self.renderer
+            .update_uniform_buffer(&self.render_camera.uniform_buffer, uniform);
+    }
+
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
-        for mesh_instance in &self.render_scene.mesh_instances {
+        for mesh_instance in self.render_scene.mesh_instances.values() {
             let mesh = self.render_scene.meshes.get(&mesh_instance.mesh).unwrap();
 
             let render_mesh_commands = mesh.submeshes.iter().map(|submesh| {
                 let material = self.render_scene.materials.get(&submesh.material).unwrap();
                 RenderMeshCommand {
                     material_bind_group: &material.bind_group,
+                    model_bind_group: &mesh_instance.model_bind_group,
                     vertex_buffer: &submesh.vertex_buffer,
                     index_buffer: &submesh.index_buffer,
                     index_count: submesh.index_count,
@@ -61,14 +70,28 @@ impl VisualServer {
         Ok(())
     }
 
-    pub fn set_scene(&mut self, scene: Handle<Scene>, asset_server: &AssetServer) {
-        self.render_scene = Default::default();
-
-        let scene = asset_server.get_scene(scene);
-        self.register_node(Affine3A::IDENTITY, scene.root, scene, asset_server);
+    pub fn set_mesh_instance(
+        &mut self,
+        id: NodeId,
+        transform: Affine3A,
+        mesh_handle: Handle<Mesh>,
+        asset_server: &AssetServer,
+    ) {
+        self.register_mesh_instance(id, transform, mesh_handle, asset_server);
     }
 
-    fn register_node(
+    pub fn set_scene(&mut self, scene: Handle<Scene>, asset_server: &AssetServer) {
+        self.reset_scene();
+
+        let scene = asset_server.get_scene(scene);
+        self.register_node_recursive(Affine3A::IDENTITY, scene.root, scene, asset_server);
+    }
+
+    pub fn reset_scene(&mut self) {
+        self.render_scene = Default::default();
+    }
+
+    fn register_node_recursive(
         &mut self,
         parent_transform: Affine3A,
         node_id: NodeId,
@@ -81,28 +104,39 @@ impl VisualServer {
         match node.data {
             NodeData::Empty => (),
             NodeData::Mesh(mesh_handle) => {
-                self.register_mesh_instance(node_transform, mesh_handle, asset_server);
+                self.register_mesh_instance(node_id, node_transform, mesh_handle, asset_server);
             }
             NodeData::Camera(_) => (),
         }
 
         for &child_id in scene.children_of(node_id) {
-            self.register_node(node_transform, child_id, scene, asset_server);
+            self.register_node_recursive(node_transform, child_id, scene, asset_server);
         }
     }
 
     fn register_mesh_instance(
         &mut self,
+        id: NodeId,
         transform: Affine3A,
         handle: Handle<Mesh>,
         asset_server: &AssetServer,
     ) {
         self.register_mesh(handle, asset_server);
 
-        self.render_scene.mesh_instances.push(RenderMeshInstance {
-            transform: transform.into(),
-            mesh: handle,
-        });
+        let model_uniform = ModelUniform {
+            transform: Mat4::from(transform).to_cols_array(),
+        };
+        let model_uniform_buffer = self.renderer.create_uniform_buffer(model_uniform);
+        let model_bind_group = self.renderer.create_model_bind_group(&model_uniform_buffer);
+
+        self.render_scene.mesh_instances.insert(
+            id,
+            RenderMeshInstance {
+                model_uniform_buffer,
+                model_bind_group,
+                mesh: handle,
+            },
+        );
     }
 
     fn register_mesh(&mut self, handle: Handle<Mesh>, asset_server: &AssetServer) {
@@ -160,7 +194,7 @@ struct CameraUniform {
 struct RenderScene {
     meshes: HashMap<Handle<Mesh>, RenderMesh>,
     materials: HashMap<Handle<Material>, RenderMaterial>,
-    mesh_instances: Vec<RenderMeshInstance>,
+    mesh_instances: HashMap<NodeId, RenderMeshInstance>,
 }
 
 struct RenderMesh {
@@ -175,8 +209,16 @@ struct RenderSubmesh {
 }
 
 struct RenderMeshInstance {
-    transform: Mat4,
+    model_bind_group: wgpu::BindGroup,
+    #[allow(unused)]
+    model_uniform_buffer: wgpu::Buffer,
     mesh: Handle<Mesh>,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct ModelUniform {
+    transform: [f32; 16],
 }
 
 struct RenderMaterial {

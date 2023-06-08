@@ -4,11 +4,13 @@ use glam::Affine3A;
 
 use crate::{
     arena::{Arena, Handle},
+    engine::Context,
     Camera, Mesh,
 };
 
 pub type NodeId = Handle<Node>;
 
+#[derive(Clone)]
 pub struct Scene {
     pub nodes: Arena<Node>,
     pub root: NodeId,
@@ -39,9 +41,11 @@ impl Scene {
     }
 }
 
+#[derive(Clone)]
 pub struct Node {
     pub transform: Affine3A,
     pub data: NodeData,
+    pub update_fn: Option<fn(&mut Node, NodeId, Context)>,
 }
 
 impl Node {
@@ -53,14 +57,25 @@ impl Node {
         Self::with_data(NodeData::Mesh(mesh))
     }
 
+    pub fn new_camera(camera: Camera) -> Self {
+        Self::with_data(NodeData::Camera(camera))
+    }
+
     pub fn with_data(data: NodeData) -> Self {
         Self {
             transform: Default::default(),
             data,
+            update_fn: None,
         }
+    }
+
+    pub fn with_update(mut self, update_fn: fn(&mut Node, NodeId, Context)) -> Self {
+        self.update_fn = Some(update_fn);
+        self
     }
 }
 
+#[derive(Clone)]
 pub enum NodeData {
     Empty,
     Camera(Camera),

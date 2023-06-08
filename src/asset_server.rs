@@ -1,5 +1,6 @@
 use std::path::Path;
 
+use glam::{Affine3A, Mat4, Quat, Vec3};
 use gltf::{buffer::Source, Gltf, Semantic};
 
 use crate::{
@@ -7,6 +8,7 @@ use crate::{
     Image, Material, Mesh, Node, Scene, Submesh, Vertex,
 };
 
+#[derive(Default)]
 pub struct AssetServer {
     scenes: Arena<Scene>,
     meshes: Arena<Mesh>,
@@ -49,7 +51,7 @@ impl AssetServer {
             let mut scene = Scene::new_empty();
 
             for gltf_node in gltf_scene.nodes() {
-                let node = if let Some(gltf_mesh) = gltf_node.mesh() {
+                let mut node = if let Some(gltf_mesh) = gltf_node.mesh() {
                     let mut submeshes = Vec::new();
                     for gltf_primitive in gltf_mesh.primitives() {
                         // ## Make material
@@ -137,6 +139,14 @@ impl AssetServer {
                 } else {
                     Node::new_empty()
                 };
+
+                // Note: account for GLTF's right handed coords -> renderer's left handed coords conversion
+                let (t, r, s) = gltf_node.transform().decomposed();
+                let translation = Vec3::new(-t[0], t[1], t[2]);
+                let rotation = Quat::from_xyzw(r[0], -r[1], -r[2], r[3]);
+                let scale = Vec3::new(s[0], s[1], s[2]);
+                node.transform =
+                    Affine3A::from_scale_rotation_translation(scale, rotation, translation);
 
                 // Handle node's children
                 for _gltf_child in gltf_node.children() {

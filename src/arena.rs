@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Arena<T> {
     elements: Vec<T>,
 }

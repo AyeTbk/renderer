@@ -1,15 +1,30 @@
-use glam::{Mat4, Vec3};
+use glam::Mat4;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Camera {
-    pub projection: Mat4,
+    pub vfov: f32,
+    pub aspect_ratio: f32,
+    pub near: f32,
+    pub far: f32,
 }
 
 impl Default for Camera {
     fn default() -> Self {
         Self {
-            projection: Mat4::perspective_lh(1.3, 1.667, 0.01, 1000.0)
-                * Mat4::from_translation(-Vec3::new(0.0, 0.0, 0.0)),
+            vfov: 1.3,
+            aspect_ratio: 1.667,
+            near: 0.01,
+            far: 1000.0,
         }
+    }
+}
+
+impl Camera {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn projection_matrix(&self) -> Mat4 {
+        Mat4::perspective_lh(self.vfov, self.aspect_ratio, self.near, self.far)
     }
 }

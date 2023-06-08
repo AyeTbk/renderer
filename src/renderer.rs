@@ -1,20 +1,8 @@
-use glam::{UVec2, Vec3};
+use glam::UVec2;
 use pollster::FutureExt;
 use wgpu::{util::DeviceExt, BindGroupDescriptor};
 
 use crate::{Color, Vertex};
-
-const VERTICES: &[Vertex] = &[
-    Vertex::new(Vec3::new(-1.0, 1.0, 0.0), Color::new_rgb(0.5, 0.0, 0.5)),
-    Vertex::new(Vec3::new(-1.0, -1.0, 0.0), Color::new_rgb(0.5, 0.0, 0.0)),
-    Vertex::new(Vec3::new(1.0, 1.0, 0.0), Color::new_rgb(0.0, 0.0, 0.5)),
-    //Vertex::new(Vec3::new(1.0, -1.0, 0.0), Color::BLACK),
-];
-
-const INDICES: &[u16] = &[
-    0, 1, 2, //
-      // 1, 3, 2, //
-];
 
 pub struct Renderer {
     render_size: UVec2,
@@ -29,6 +17,7 @@ pub struct Renderer {
     //
     camera_bind_group_layout: wgpu::BindGroupLayout,
     material_bind_group_layout: wgpu::BindGroupLayout,
+    model_bind_group_layout: wgpu::BindGroupLayout,
 }
 
 impl Renderer {
@@ -108,6 +97,20 @@ impl Renderer {
                     count: None,
                 }],
             });
+        let model_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("model bind group layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("shader"),
@@ -116,7 +119,11 @@ impl Renderer {
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("render pipeline layout"),
-                bind_group_layouts: &[&camera_bind_group_layout, &material_bind_group_layout],
+                bind_group_layouts: &[
+                    &camera_bind_group_layout,
+                    &material_bind_group_layout,
+                    &model_bind_group_layout,
+                ],
                 push_constant_ranges: &[],
             });
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -162,6 +169,7 @@ impl Renderer {
             render_pipeline,
             camera_bind_group_layout,
             material_bind_group_layout,
+            model_bind_group_layout,
         }
     }
 
@@ -215,10 +223,26 @@ impl Renderer {
             })
     }
 
+    pub fn update_uniform_buffer(&mut self, buffer: &wgpu::Buffer, uniform: impl Uniform) {
+        self.queue
+            .write_buffer(buffer, 0, bytemuck::cast_slice(&[uniform]));
+    }
+
     pub fn create_material_bind_group(&mut self, uniform_buffer: &wgpu::Buffer) -> wgpu::BindGroup {
         self.device.create_bind_group(&BindGroupDescriptor {
             label: Some("material bind group"),
             layout: &self.material_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: uniform_buffer.as_entire_binding(),
+            }],
+        })
+    }
+
+    pub fn create_model_bind_group(&mut self, uniform_buffer: &wgpu::Buffer) -> wgpu::BindGroup {
+        self.device.create_bind_group(&BindGroupDescriptor {
+            label: Some("model bind group"),
+            layout: &self.model_bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: uniform_buffer.as_entire_binding(),
@@ -276,12 +300,14 @@ impl Renderer {
             for render_command in render_commands {
                 let RenderMeshCommand {
                     material_bind_group,
+                    model_bind_group,
                     vertex_buffer,
                     index_buffer,
                     index_count,
                 } = render_command;
 
                 render_pass.set_bind_group(1, material_bind_group, &[]);
+                render_pass.set_bind_group(2, model_bind_group, &[]);
                 render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
                 render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint16);
                 render_pass.draw_indexed(0..index_count, 0, 0..1);
@@ -301,6 +327,7 @@ impl<T> Uniform for T where T: Clone + Copy + bytemuck::Pod + bytemuck::Zeroable
 
 pub struct RenderMeshCommand<'a> {
     pub material_bind_group: &'a wgpu::BindGroup,
+    pub model_bind_group: &'a wgpu::BindGroup,
     pub vertex_buffer: &'a wgpu::Buffer,
     pub index_buffer: &'a wgpu::Buffer,
     pub index_count: u32,
