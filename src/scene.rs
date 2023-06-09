@@ -28,9 +28,10 @@ impl Scene {
         }
     }
 
-    pub fn add_allocate_child(&mut self, parent: NodeId, child: Node) {
+    pub fn add_allocate_child(&mut self, parent: NodeId, child: Node) -> NodeId {
         let child = self.nodes.allocate(child);
         self.children.entry(parent).or_default().push(child);
+        child
     }
 
     pub fn children_of(&self, node_id: NodeId) -> &[NodeId] {

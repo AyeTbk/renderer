@@ -49,23 +49,27 @@ impl VisualServer {
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
+        let mut render_mesh_commands = Vec::new();
+
         for mesh_instance in self.render_scene.mesh_instances.values() {
             let mesh = self.render_scene.meshes.get(&mesh_instance.mesh).unwrap();
 
-            let render_mesh_commands = mesh.submeshes.iter().map(|submesh| {
+            for submesh in &mesh.submeshes {
                 let material = self.render_scene.materials.get(&submesh.material).unwrap();
-                RenderMeshCommand {
+                render_mesh_commands.push(RenderMeshCommand {
                     material_bind_group: &material.bind_group,
                     model_bind_group: &mesh_instance.model_bind_group,
                     vertex_buffer: &submesh.vertex_buffer,
                     index_buffer: &submesh.index_buffer,
                     index_count: submesh.index_count,
-                }
-            });
-
-            self.renderer
-                .render_meshes(&self.render_camera.uniform_buffer, render_mesh_commands)?;
+                });
+            }
         }
+
+        self.renderer.render_meshes(
+            &self.render_camera.uniform_buffer,
+            render_mesh_commands.into_iter(),
+        )?;
 
         Ok(())
     }
