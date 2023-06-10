@@ -19,7 +19,7 @@ impl VisualServer {
     pub fn new(window: &winit::window::Window) -> Self {
         let mut renderer = Renderer::new(window);
         let camera_uniform = CameraUniform {
-            view_projection: Camera::default().projection_matrix().to_cols_array(),
+            projection_view: Camera::default().projection_matrix().to_cols_array(),
         };
         let render_camera = RenderCamera {
             uniform_buffer: renderer.create_uniform_buffer(camera_uniform),
@@ -42,7 +42,7 @@ impl VisualServer {
 
     pub fn set_camera(&mut self, transform: &Affine3A, camera: &Camera) {
         let uniform = CameraUniform {
-            view_projection: (camera.projection_matrix() * transform.inverse()).to_cols_array(),
+            projection_view: (camera.projection_matrix() * transform.inverse()).to_cols_array(),
         };
         self.renderer
             .update_uniform_buffer(&self.render_camera.uniform_buffer, uniform);
@@ -191,7 +191,7 @@ struct RenderCamera {
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct CameraUniform {
-    view_projection: [f32; 16],
+    projection_view: [f32; 16],
 }
 
 #[derive(Default)]

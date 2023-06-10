@@ -1,19 +1,17 @@
 use glam::Vec3;
 
-use crate::Color;
-
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Vertex {
     pub position: [f32; 3],
-    pub color: [f32; 4],
+    pub normal: [f32; 3],
 }
 
 impl Vertex {
-    pub const fn new(position: Vec3, color: Color) -> Self {
+    pub const fn new(position: Vec3, normal: Vec3) -> Self {
         Self {
             position: [position.x, position.y, position.z],
-            color: [color.r, color.g, color.b, color.a],
+            normal: [normal.x, normal.y, normal.z],
         }
     }
 
@@ -30,7 +28,7 @@ impl Vertex {
                 wgpu::VertexAttribute {
                     offset: std::mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
                     shader_location: 1,
-                    format: wgpu::VertexFormat::Float32x4,
+                    format: wgpu::VertexFormat::Float32x3,
                 },
             ],
         }

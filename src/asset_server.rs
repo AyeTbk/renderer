@@ -136,6 +136,7 @@ impl AssetServer {
                 .expect("material should be preallocated");
 
             // ## Get vertices data
+            // ### position attribute
             let positions_accessor = gltf_primitive
                 .attributes()
                 .find_map(|(sem, accessor)| {
@@ -160,10 +161,35 @@ impl AssetServer {
             let positions_bytes = &gltf_bin
                 [positions_view.offset()..positions_view.offset() + positions_view.length()];
 
+            // ### normal attribute
+            let normals_accessor = gltf_primitive
+                .attributes()
+                .find_map(|(sem, accessor)| {
+                    if sem == Semantic::Normals {
+                        Some(accessor)
+                    } else {
+                        None
+                    }
+                })
+                .ok_or_else(|| format!("missing normals attribute"))?;
+
+            assert!(normals_accessor.offset() == 0);
+            assert!(normals_accessor.data_type() == gltf::accessor::DataType::F32);
+            assert!(normals_accessor.view().is_some());
+            assert!(matches!(
+                normals_accessor.view().unwrap().buffer().source(),
+                Source::Bin
+            ));
+            assert!(normals_accessor.view().unwrap().stride().is_none());
+
+            let normals_view = normals_accessor.view().unwrap();
+            let normals_bytes =
+                &gltf_bin[normals_view.offset()..normals_view.offset() + normals_view.length()];
+
             let mut vertices = Vec::new();
             for i in 0..positions_accessor.count() {
                 let position_idx = i * positions_accessor.size();
-                let read_coord = |j: usize| {
+                let read_pos_coord = |j: usize| {
                     let coord_idx = position_idx + j * 4;
                     let coord_bytes = [
                         positions_bytes[coord_idx + 0],
@@ -173,14 +199,23 @@ impl AssetServer {
                     ];
                     f32::from_le_bytes(coord_bytes)
                 };
+                let normal_idx = i * normals_accessor.size();
+                let read_n_coord = |j: usize| {
+                    let coord_idx = normal_idx + j * 4;
+                    let coord_bytes = [
+                        normals_bytes[coord_idx + 0],
+                        normals_bytes[coord_idx + 1],
+                        normals_bytes[coord_idx + 2],
+                        normals_bytes[coord_idx + 3],
+                    ];
+                    f32::from_le_bytes(coord_bytes)
+                };
 
                 // Note: X coordinate is negated to convert from GLTF's right handed coordinate system to our left handed one.
-                let position = [-read_coord(0), read_coord(1), read_coord(2)];
+                let position = [-read_pos_coord(0), read_pos_coord(1), read_pos_coord(2)];
+                let normal = [-read_n_coord(0), read_n_coord(1), read_n_coord(2)];
 
-                vertices.push(Vertex {
-                    position,
-                    color: [0.0, 0.0, 0.0, 1.0],
-                });
+                vertices.push(Vertex { position, normal });
             }
 
             // ## Get indices data
