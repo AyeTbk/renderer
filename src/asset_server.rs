@@ -48,6 +48,7 @@ impl AssetServer {
 
         // Preallocate materials
         let mut material_ids_map = HashMap::<Option<usize>, Handle<Material>>::new();
+        material_ids_map.insert(None, self.materials.allocate(Material::default()));
         for gltf_material in gltf.materials() {
             let id = gltf_material.index();
             if !material_ids_map.contains_key(&id) {
@@ -222,14 +223,22 @@ impl AssetServer {
             let indices_accessor = gltf_primitive
                 .indices()
                 .ok_or_else(|| "missing primitve indices".to_string())?;
-            assert!(indices_accessor.data_type() == gltf::accessor::DataType::U16);
             let indices_view = indices_accessor.view().unwrap();
             let indices_bytes =
                 &gltf_bin[indices_view.offset()..indices_view.offset() + indices_view.length()];
-            let indices = indices_bytes
-                .chunks_exact(2)
-                .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
-                .collect::<Vec<u16>>();
+
+            let indices = match indices_accessor.data_type() {
+                gltf::accessor::DataType::U16 => indices_bytes
+                    .chunks_exact(2)
+                    .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
+                    .map(|short| short as u32)
+                    .collect::<Vec<u32>>(),
+                gltf::accessor::DataType::U32 => indices_bytes
+                    .chunks_exact(4)
+                    .map(|bytes| u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+                    .collect::<Vec<u32>>(),
+                t => return Err(format!("unsuported index type: {:?}", t)),
+            };
 
             let submesh = Submesh {
                 vertices,

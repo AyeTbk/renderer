@@ -20,6 +20,10 @@ impl Color {
         Self { a, ..self }
     }
 
+    pub const fn to_array(&self) -> [f32; 4] {
+        [self.r, self.g, self.b, self.a]
+    }
+
     pub const WHITE: Color = Color::new(1.0, 1.0, 1.0, 1.0);
     pub const GREY: Color = Color::new(0.5, 0.5, 0.5, 1.0);
     pub const BLACK: Color = Color::new(0.0, 0.0, 0.0, 1.0);

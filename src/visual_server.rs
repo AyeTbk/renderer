@@ -1,34 +1,44 @@
 use std::collections::HashMap;
 
-use glam::{Affine3A, Mat4, UVec2};
+use glam::{Affine3A, Mat4, UVec2, Vec3, Vec3Swizzles, Vec4};
 
 use crate::{
     arena::Handle,
     renderer::RenderMeshCommand,
     scene::{NodeData, NodeId},
-    AssetServer, Camera, Material, Mesh, Renderer, Scene,
+    AssetServer, Camera, Color, Material, Mesh, Renderer, Scene,
 };
 
 pub struct VisualServer {
     renderer: Renderer,
-    render_camera: RenderCamera,
     render_scene: RenderScene,
+    render_scene_data: RenderSceneData,
 }
 
 impl VisualServer {
     pub fn new(window: &winit::window::Window) -> Self {
         let mut renderer = Renderer::new(window);
-        let camera_uniform = CameraUniform {
+        let scene_uniform = SceneUniform {
             projection_view: Camera::default().projection_matrix().to_cols_array(),
+            view_pos: Vec4::default().to_array(),
+            ambient_light: Color::new(0.3, 0.5, 0.9, 0.01).to_array(),
+            sun_color: Color::new(1.0, 0.78, 0.7, 1.0).to_array(),
+            sun_direction: Vec3::new(0.1, -1.0, 0.4)
+                .normalize_or_zero()
+                .xyzz()
+                .to_array(),
         };
-        let render_camera = RenderCamera {
-            uniform_buffer: renderer.create_uniform_buffer(camera_uniform),
+        let render_scene_data = RenderSceneData {
+            uniform: scene_uniform,
+            uniform_buffer: renderer.create_uniform_buffer(scene_uniform),
+            depth_texture: renderer
+                .create_depth_texture(window.inner_size().width, window.inner_size().height),
         };
 
         Self {
             renderer,
-            render_camera,
             render_scene: Default::default(),
+            render_scene_data,
         }
     }
 
@@ -37,15 +47,22 @@ impl VisualServer {
     }
 
     pub fn set_render_size(&mut self, render_size: UVec2) {
-        self.renderer.set_render_size(render_size)
+        self.renderer.set_render_size(render_size);
+
+        self.render_scene_data.depth_texture = self
+            .renderer
+            .create_depth_texture(render_size.x, render_size.y);
     }
 
     pub fn set_camera(&mut self, transform: &Affine3A, camera: &Camera) {
-        let uniform = CameraUniform {
-            projection_view: (camera.projection_matrix() * transform.inverse()).to_cols_array(),
-        };
-        self.renderer
-            .update_uniform_buffer(&self.render_camera.uniform_buffer, uniform);
+        self.render_scene_data.uniform.projection_view =
+            (camera.projection_matrix() * transform.inverse()).to_cols_array();
+        self.render_scene_data.uniform.view_pos = transform.translation.xyzz().to_array();
+
+        self.renderer.update_uniform_buffer(
+            &self.render_scene_data.uniform_buffer,
+            self.render_scene_data.uniform,
+        );
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -67,7 +84,8 @@ impl VisualServer {
         }
 
         self.renderer.render_meshes(
-            &self.render_camera.uniform_buffer,
+            &self.render_scene_data.depth_texture,
+            &self.render_scene_data.uniform_buffer,
             render_mesh_commands.into_iter(),
         )?;
 
@@ -184,14 +202,20 @@ impl VisualServer {
     }
 }
 
-struct RenderCamera {
+struct RenderSceneData {
+    uniform: SceneUniform,
     uniform_buffer: wgpu::Buffer,
+    depth_texture: wgpu::Texture,
 }
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-struct CameraUniform {
+struct SceneUniform {
     projection_view: [f32; 16],
+    view_pos: [f32; 4],
+    ambient_light: [f32; 4],
+    sun_color: [f32; 4],
+    sun_direction: [f32; 4],
 }
 
 #[derive(Default)]

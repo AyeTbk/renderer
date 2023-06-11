@@ -49,7 +49,8 @@ impl Engine {
         self.input.movement = Vec3::new(
             self.input
                 .axis_strength(VirtualKeyCode::D, VirtualKeyCode::A),
-            0.0,
+            self.input
+                .axis_strength(VirtualKeyCode::Q, VirtualKeyCode::Z),
             self.input
                 .axis_strength(VirtualKeyCode::W, VirtualKeyCode::S),
         );
