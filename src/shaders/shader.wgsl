@@ -33,7 +33,10 @@ fn vs_main(
     var out: VertexOutput;
     let vertex_pos_in_world_space = model.transform * vec4f(vertex.pos, 1.0);
     out.clip_position = scene.projection_view * vertex_pos_in_world_space;
+    
+    // FIXME: This is incorrect, normals will be wrong with a non-uniform scaling factor (look up 'normal matrix')
     out.normal = normalize((model.transform * vec4f(vertex.normal, 0.0)).xyz);
+
     out.frag_pos = vertex_pos_in_world_space.xyz;
     return out;
 }

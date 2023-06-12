@@ -12,7 +12,13 @@ fn main() {
     let window = WindowBuilder::new().build(&event_loop).unwrap();
 
     let mut eng = Engine::new(&window);
-    let scene = eng.asset_server.load_scene("data/suzanne.glb").unwrap();
+    let scene = eng
+        .asset_server
+        // .load_scene("data/sponza/Sponza.gltf")
+        .load_scene("data/flight/FlightHelmet.gltf")
+        // .load_scene("data/suzanne/suzanne.gltf")
+        // .load_scene("data/tri.glb")
+        .unwrap();
     eng.scene = eng.asset_server.get_scene(scene).clone();
 
     // First person camera
