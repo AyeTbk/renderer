@@ -7,8 +7,8 @@ use winit::event::VirtualKeyCode;
 pub struct Input {
     pub keymap: HashMap<VirtualKeyCode, bool>,
     pub mod_shift: bool,
-    pub pointer_pos: Option<Vec2>,
-    pub previous_pointer_pos: Option<Vec2>,
+    pub pointer_pos: Vec2,
+    pub pointer_delta: Vec2,
     //
     pub delta_view: Vec2,
     pub movement: Vec3,

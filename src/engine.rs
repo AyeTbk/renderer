@@ -1,4 +1,4 @@
-use glam::{Affine3A, UVec2, Vec3};
+use glam::{Affine3A, UVec2, Vec2, Vec3};
 use winit::{event::VirtualKeyCode, window::Window};
 
 use crate::{
@@ -37,13 +37,9 @@ impl Engine {
     }
 
     fn update_input(&mut self) {
-        if let Some(pointer_pos) = self.input.pointer_pos {
-            if let Some(previous_pointer_pos) = self.input.previous_pointer_pos {
-                let delta_pointer = pointer_pos - previous_pointer_pos;
-                let delta_view = delta_pointer / self.display.window_inner_size.y as f32;
-                self.input.delta_view = delta_view;
-            }
-            self.input.previous_pointer_pos = Some(pointer_pos);
+        if self.display.window_inner_size.y > 0 {
+            let delta_view = self.input.pointer_delta / self.display.window_inner_size.y as f32;
+            self.input.delta_view = delta_view;
         }
 
         self.input.movement = Vec3::new(
@@ -56,6 +52,9 @@ impl Engine {
         );
 
         self.input.fast = self.input.mod_shift;
+
+        // With how the mousemove event works, the delta has to be accumulated, and here I reset it.
+        self.input.pointer_delta = Vec2::ZERO;
     }
 
     fn update_node_recursive(&mut self, node_id: NodeId, parent_global_transform: Affine3A) {

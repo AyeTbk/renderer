@@ -2,7 +2,7 @@ use glam::{Mat3A, Quat, UVec2, Vec2, Vec3A};
 use renderer::{Engine, Node};
 use winit::{
     dpi::PhysicalSize,
-    event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent},
+    event::{DeviceEvent, ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     window::WindowBuilder,
 };
@@ -10,6 +10,11 @@ use winit::{
 fn main() {
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
+
+    window
+        .set_cursor_grab(winit::window::CursorGrabMode::Confined)
+        .unwrap();
+    window.set_cursor_visible(false);
 
     let mut eng = Engine::new(&window);
     let scene = eng
@@ -92,7 +97,13 @@ fn main() {
             }
             WindowEvent::CursorMoved { position, .. } => {
                 let pointer_pos = Vec2::new(position.x as f32, position.y as f32);
-                eng.input.pointer_pos = Some(pointer_pos);
+                eng.input.pointer_pos = pointer_pos;
+            }
+            _ => {}
+        },
+        Event::DeviceEvent { event, .. } => match event {
+            DeviceEvent::MouseMotion { delta } => {
+                eng.input.pointer_delta += Vec2::new(delta.0 as f32, delta.1 as f32);
             }
             _ => {}
         },
