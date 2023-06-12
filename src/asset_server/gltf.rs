@@ -143,6 +143,8 @@ impl<'a> Write<'a> {
     {
         let mut submeshes = Vec::new();
         for gltf_primitive in gltf_mesh.primitives() {
+            assert!(matches!(gltf_primitive.mode(), gltf::mesh::Mode::Triangles));
+
             let material = *self
                 .material_ids_map
                 .get(&gltf_primitive.material().index())
@@ -249,10 +251,13 @@ impl<'a> Write<'a> {
             if let buffer::Source::Uri(path) = indices_view.buffer().source() {
                 self.load_external_bin(path, read)?;
             }
+
             let indices_bin =
                 self.get_bin_from_buffer_source(indices_view.buffer().source(), read)?;
-            let indices_bytes =
+            let indices_view_bytes =
                 &indices_bin[indices_view.offset()..indices_view.offset() + indices_view.length()];
+            let indices_bytes = &indices_view_bytes[indices_accessor.offset()
+                ..indices_accessor.offset() + indices_accessor.count() * indices_accessor.size()];
 
             let indices = match indices_accessor.data_type() {
                 gltf::accessor::DataType::U16 => indices_bytes
