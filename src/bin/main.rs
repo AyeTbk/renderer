@@ -18,6 +18,7 @@ fn main() {
         // .load_scene("data/flight/FlightHelmet.gltf")
         // .load_scene("data/suzanne/suzanne.gltf")
         // .load_scene("data/tri.glb")
+        // .load_scene("data/uvs.glb")
         .unwrap();
     eng.scene = eng.asset_server.get_scene(scene).clone();
 

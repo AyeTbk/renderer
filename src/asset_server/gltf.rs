@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    mem::size_of,
     path::{Path, PathBuf},
 };
 
@@ -194,10 +195,35 @@ impl<'a> Write<'a> {
                 .view()
                 .unwrap()
                 .stride()
-                .unwrap_or(positions_accessor.size());
+                .unwrap_or(normals_accessor.size());
 
             let normals_view = normals_accessor.view().unwrap();
             if let buffer::Source::Uri(path) = normals_view.buffer().source() {
+                self.load_external_bin(path, read)?;
+            }
+
+            // ### uv attribute
+            let uvs_accessor = gltf_primitive
+                .attributes()
+                .find_map(|(sem, accessor)| {
+                    if sem == Semantic::TexCoords(0) {
+                        Some(accessor)
+                    } else {
+                        None
+                    }
+                })
+                .ok_or_else(|| format!("missing uvs attribute"))?;
+
+            assert!(uvs_accessor.data_type() == gltf::accessor::DataType::F32);
+            assert!(uvs_accessor.view().is_some());
+            let uvs_stride = uvs_accessor
+                .view()
+                .unwrap()
+                .stride()
+                .unwrap_or(uvs_accessor.size());
+
+            let uvs_view = uvs_accessor.view().unwrap();
+            if let buffer::Source::Uri(path) = uvs_view.buffer().source() {
                 self.load_external_bin(path, read)?;
             }
 
@@ -211,11 +237,14 @@ impl<'a> Write<'a> {
             let normals_bytes =
                 &normals_bin[normals_view.offset()..normals_view.offset() + normals_view.length()];
 
+            let uvs_bin = self.get_bin_from_buffer_source(uvs_view.buffer().source(), read)?;
+            let uvs_bytes = &uvs_bin[uvs_view.offset()..uvs_view.offset() + uvs_view.length()];
+
             let mut vertices = Vec::new();
             for i in 0..positions_accessor.count() {
                 let position_idx = i * positions_stride + positions_accessor.offset();
                 let read_pos_coord = |j: usize| {
-                    let coord_idx = position_idx + j * 4;
+                    let coord_idx = position_idx + j * size_of::<f32>();
                     let coord_bytes = [
                         positions_bytes[coord_idx + 0],
                         positions_bytes[coord_idx + 1],
@@ -226,7 +255,7 @@ impl<'a> Write<'a> {
                 };
                 let normal_idx = i * normals_stride + normals_accessor.offset();
                 let read_n_coord = |j: usize| {
-                    let coord_idx = normal_idx + j * 4;
+                    let coord_idx = normal_idx + j * size_of::<f32>();
                     let coord_bytes = [
                         normals_bytes[coord_idx + 0],
                         normals_bytes[coord_idx + 1],
@@ -235,12 +264,28 @@ impl<'a> Write<'a> {
                     ];
                     f32::from_le_bytes(coord_bytes)
                 };
+                let uv_idx = i * uvs_stride + uvs_accessor.offset();
+                let read_uv_coord = |j: usize| {
+                    let coord_idx = uv_idx + j * size_of::<f32>();
+                    let coord_bytes = [
+                        uvs_bytes[coord_idx + 0],
+                        uvs_bytes[coord_idx + 1],
+                        uvs_bytes[coord_idx + 2],
+                        uvs_bytes[coord_idx + 3],
+                    ];
+                    f32::from_le_bytes(coord_bytes)
+                };
 
                 // Note: X coordinate is negated to convert from GLTF's right handed coordinate system to our left handed one.
                 let position = [-read_pos_coord(0), read_pos_coord(1), read_pos_coord(2)];
                 let normal = [-read_n_coord(0), read_n_coord(1), read_n_coord(2)];
+                let uv = [read_uv_coord(0), read_uv_coord(1)];
 
-                vertices.push(Vertex { position, normal });
+                vertices.push(Vertex {
+                    position,
+                    normal,
+                    uv,
+                });
             }
 
             // ## Get indices data

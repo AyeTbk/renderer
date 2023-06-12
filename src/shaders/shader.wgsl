@@ -17,12 +17,14 @@ var<uniform> model: ModelUniform;
 struct VertexInput {
     @location(0) pos: vec3f,
     @location(1) normal: vec3f,
+    @location(2) uv: vec2f,
 };
 
 struct VertexOutput {
     @builtin(position) clip_position: vec4f,
-    @location(0) normal: vec3f,
-    @location(1) frag_pos: vec3f,
+    @location(0) frag_pos: vec3f,
+    @location(1) normal: vec3f,
+    @location(2) uv: vec2f,
 };
 
 
@@ -33,11 +35,13 @@ fn vs_main(
     var out: VertexOutput;
     let vertex_pos_in_world_space = model.transform * vec4f(vertex.pos, 1.0);
     out.clip_position = scene.projection_view * vertex_pos_in_world_space;
+    out.frag_pos = vertex_pos_in_world_space.xyz;
     
     // FIXME: This is incorrect, normals will be wrong with a non-uniform scaling factor (look up 'normal matrix')
     out.normal = normalize((model.transform * vec4f(vertex.normal, 0.0)).xyz);
 
-    out.frag_pos = vertex_pos_in_world_space.xyz;
+    out.uv = vertex.uv;
+
     return out;
 }
 
@@ -67,6 +71,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     
     let sun_light = sun_diffuse + sun_spec;
     let color = (ambient_light + sun_light) * material.base_color.rgb;
+    // let color = vec3f(in.uv, 0.0);
     
     return vec4f(color, 1.0);
 }
