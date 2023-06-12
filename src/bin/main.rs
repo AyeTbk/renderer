@@ -11,10 +11,7 @@ fn main() {
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
 
-    window
-        .set_cursor_grab(winit::window::CursorGrabMode::Confined)
-        .unwrap();
-    window.set_cursor_visible(false);
+    let mut cursor_grabbed = false;
 
     let mut eng = Engine::new(&window);
     let scene = eng
@@ -98,6 +95,23 @@ fn main() {
             WindowEvent::CursorMoved { position, .. } => {
                 let pointer_pos = Vec2::new(position.x as f32, position.y as f32);
                 eng.input.pointer_pos = pointer_pos;
+            }
+            WindowEvent::MouseInput { state, .. } => {
+                if *state == ElementState::Pressed {
+                    if cursor_grabbed {
+                        cursor_grabbed = false;
+                        window
+                            .set_cursor_grab(winit::window::CursorGrabMode::None)
+                            .unwrap();
+                        window.set_cursor_visible(true);
+                    } else {
+                        cursor_grabbed = true;
+                        window
+                            .set_cursor_grab(winit::window::CursorGrabMode::Confined)
+                            .unwrap();
+                        window.set_cursor_visible(false);
+                    }
+                }
             }
             _ => {}
         },
