@@ -1,6 +1,6 @@
 use crate::{
     arena::{Arena, Handle},
-    Material, Mesh, Scene,
+    Image, Material, Mesh, Scene,
 };
 
 mod gltf;
@@ -9,7 +9,7 @@ mod gltf;
 pub struct AssetServer {
     scenes: Arena<Scene>,
     meshes: Arena<Mesh>,
-    // images: Arena<Image>,
+    images: Arena<Image>,
     materials: Arena<Material>,
 }
 
@@ -18,7 +18,7 @@ impl AssetServer {
         Self {
             scenes: Default::default(),
             meshes: Default::default(),
-            // images: Default::default(),
+            images: Default::default(),
             materials: Default::default(),
         }
     }
@@ -29,6 +29,10 @@ impl AssetServer {
 
     pub fn get_material(&self, handle: Handle<Material>) -> &Material {
         self.materials.get(handle)
+    }
+
+    pub fn get_image(&self, handle: Handle<Image>) -> &Image {
+        self.images.get(handle)
     }
 
     pub fn get_scene(&self, handle: Handle<Scene>) -> &Scene {

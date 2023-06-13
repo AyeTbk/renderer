@@ -17,7 +17,7 @@ glam = "0.24"
 winit = "0.28"
 
 # Loading images
-image = { version = "0.24", default-features = false, features = ["png", "jpeg"] }
+asset_image = { path = "crates/asset_image" }
 
 # Loading models and scenes
 gltf = "1.1"
@@ -26,8 +26,13 @@ gltf = "1.1"
 env_logger = "0.10"
 log = "0.4"
 
-# To transmute data safely to upload to GPU
+# Transmute data safely to upload to GPU
 bytemuck =  { version = "1.13", features = [ "derive" ] }
 
-# To ignore async
+# Ignore async
 pollster = "0.3"
+
+
+# Enable high optimizations for dependencies, but not for our code:
+[profile.dev.package."*"]
+opt-level = 3

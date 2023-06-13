@@ -11,7 +11,7 @@ use gltf::{
 };
 
 use crate::{
-    arena::Handle, scene::NodeId, AssetServer, Material, Mesh, Node, Scene, Submesh, Vertex,
+    arena::Handle, scene::NodeId, AssetServer, Image, Material, Mesh, Node, Scene, Submesh, Vertex,
 };
 
 pub struct GtlfLoader<'a> {
@@ -30,6 +30,7 @@ struct Write<'a> {
     external_bins: HashMap<PathBuf, Vec<u8>>,
     material_ids_map: HashMap<Option<usize>, Handle<Material>>,
     meshes_ids_map: HashMap<usize, Handle<Mesh>>,
+    images_ids_map: HashMap<usize, Handle<Image>>,
 }
 
 impl<'a> GtlfLoader<'a> {
@@ -49,6 +50,7 @@ impl<'a> GtlfLoader<'a> {
                 external_bins: Default::default(),
                 material_ids_map: Default::default(),
                 meshes_ids_map: Default::default(),
+                images_ids_map: Default::default(),
             },
         })
     }
@@ -60,6 +62,24 @@ impl<'a> GtlfLoader<'a> {
 
 impl<'a> Write<'a> {
     pub fn load(&mut self, read: &'a Read) -> Result<Handle<Scene>, String> {
+        // Preallocate images
+        for gltf_image in read.gltf.images() {
+            let id = gltf_image.index();
+            if !self.images_ids_map.contains_key(&id) {
+                match gltf_image.source() {
+                    gltf::image::Source::Uri { uri, .. } => {
+                        let full_path = Self::make_full_path(uri, read);
+                        let image = Image::load_from_file(full_path)?;
+                        let handle = self.asset_server.images.allocate(image);
+                        self.images_ids_map.insert(id, handle);
+                    }
+                    gltf::image::Source::View { .. } => {
+                        unimplemented!()
+                    }
+                }
+            }
+        }
+
         // Preallocate materials
         self.material_ids_map.insert(
             None,
@@ -68,11 +88,13 @@ impl<'a> Write<'a> {
         for gltf_material in read.gltf.materials() {
             let id = gltf_material.index();
             if !self.material_ids_map.contains_key(&id) {
+                let pbr = gltf_material.pbr_metallic_roughness();
                 let handle = self.asset_server.materials.allocate(Material {
-                    base_color: gltf_material
-                        .pbr_metallic_roughness()
-                        .base_color_factor()
-                        .into(),
+                    base_color: pbr.base_color_factor().into(),
+                    base_color_image: pbr.base_color_texture().and_then(|info| {
+                        let id = info.texture().index();
+                        self.images_ids_map.get(&id).copied()
+                    }),
                 });
                 self.material_ids_map.insert(id, handle);
             }
@@ -88,6 +110,7 @@ impl<'a> Write<'a> {
             }
         }
 
+        // Load scene
         for gltf_scene in read.gltf.scenes() {
             let mut scene = Scene::new_empty();
 
@@ -340,9 +363,7 @@ impl<'a> Write<'a> {
                 .map(|v| &v[..])
                 .ok_or("expected builtin bin but it's missing".to_string()),
             Source::Uri(path) => {
-                let mut full_path = PathBuf::new();
-                full_path.push(&read.base_path);
-                full_path.push(path);
+                let full_path = Self::make_full_path(path, read);
                 Ok(self
                     .external_bins
                     .get(&full_path)
@@ -352,14 +373,19 @@ impl<'a> Write<'a> {
     }
 
     fn load_external_bin(&mut self, path: &str, read: &'a Read) -> Result<&[u8], String> {
-        let mut full_path = PathBuf::new();
-        full_path.push(&read.base_path);
-        full_path.push(path);
+        let full_path = Self::make_full_path(path, read);
 
         if !self.external_bins.contains_key(&full_path) {
             let bin = std::fs::read(&full_path).map_err(|e| format!("{:?}: {:?}", e, full_path))?;
             self.external_bins.insert(full_path.clone(), bin);
         }
         Ok(self.external_bins.get(&full_path).unwrap())
+    }
+
+    fn make_full_path(path: &str, read: &'a Read) -> PathBuf {
+        let mut full_path = PathBuf::new();
+        full_path.push(&read.base_path);
+        full_path.push(path);
+        full_path
     }
 }

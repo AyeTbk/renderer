@@ -1,3 +1,1 @@
-pub struct Image {
-    //
-}
+pub use asset_image::Image;

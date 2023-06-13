@@ -15,6 +15,7 @@ pub struct VisualServer {
     renderer: Renderer,
     render_scene: RenderScene,
     render_scene_data: RenderSceneData,
+    white_texture: wgpu::Texture,
 }
 
 impl VisualServer {
@@ -23,7 +24,7 @@ impl VisualServer {
         let scene_uniform = SceneUniform {
             projection_view: Camera::default().projection_matrix().to_cols_array(),
             view_pos: Vec4::default().to_array(),
-            ambient_light: Color::new(0.3, 0.5, 0.9, 0.01).to_array(),
+            ambient_light: Color::new(0.3, 0.5, 0.9, 0.05).to_array(),
             sun_color: Color::new(1.0, 0.78, 0.7, 1.0).to_array(),
             sun_direction: Vec3::new(0.1, -1.0, 0.4)
                 .normalize_or_zero()
@@ -36,11 +37,13 @@ impl VisualServer {
             depth_texture: renderer
                 .create_depth_texture(window.inner_size().width, window.inner_size().height),
         };
+        let white_texture = renderer.create_color_texture(1, 1, &[1, 1, 1, 1]);
 
         Self {
             renderer,
             render_scene: Default::default(),
             render_scene_data,
+            white_texture,
         }
     }
 
@@ -193,20 +196,22 @@ impl VisualServer {
             };
 
             let uniform_buffer = self.renderer.create_uniform_buffer(material_uniform);
-            let base_color_texture = self.renderer.create_color_texture(
-                2,
-                2,
-                &[
-                    255, 32, 32, 255, //
-                    32, 255, 32, 255, //
-                    32, 32, 255, 255, //
-                    255, 32, 255, 255, //
-                ],
-            );
+            let base_color_texture = if let Some(image) = material.base_color_image {
+                let image = asset_server.get_image(image);
+                let texture =
+                    self.renderer
+                        .create_color_texture(image.width(), image.height(), image.data());
+                Some(texture)
+            } else {
+                None
+            };
             let sampler = self.renderer.create_sampler();
+
+            let base_color_texture_ref = base_color_texture.as_ref().unwrap_or(&self.white_texture);
+
             let bind_group = self.renderer.create_material_bind_group(
                 &uniform_buffer,
-                &base_color_texture,
+                base_color_texture_ref,
                 &sampler,
             );
             let render_material = RenderMaterial {
@@ -273,7 +278,7 @@ struct RenderMaterial {
     #[allow(unused)]
     uniform_buffer: wgpu::Buffer,
     #[allow(unused)]
-    base_color_texture: wgpu::Texture,
+    base_color_texture: Option<wgpu::Texture>,
     #[allow(unused)]
     sampler: wgpu::Sampler,
 }
