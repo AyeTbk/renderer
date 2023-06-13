@@ -79,22 +79,6 @@ impl<'a> Write<'a> {
                 }
             }
         }
-        for gltf_image in read.gltf.images() {
-            let id = gltf_image.index();
-            if !self.images_ids_map.contains_key(&id) {
-                match gltf_image.source() {
-                    gltf::image::Source::Uri { uri, .. } => {
-                        let full_path = Self::make_full_path(uri, read);
-                        let image = Image::load_from_file(full_path)?;
-                        let handle = self.asset_server.images.allocate(image);
-                        self.images_ids_map.insert(id, handle);
-                    }
-                    gltf::image::Source::View { .. } => {
-                        unimplemented!()
-                    }
-                }
-            }
-        }
 
         // Preallocate materials
         self.material_ids_map.insert(

@@ -70,6 +70,11 @@ impl Node {
         }
     }
 
+    pub fn with_transform(mut self, transform: Affine3A) -> Self {
+        self.transform = transform;
+        self
+    }
+
     pub fn with_update(mut self, update_fn: fn(&mut Node, NodeId, Context)) -> Self {
         self.update_fn = Some(update_fn);
         self

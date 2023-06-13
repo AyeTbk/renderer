@@ -1,4 +1,4 @@
-use glam::{Mat3A, Quat, UVec2, Vec2, Vec3A};
+use glam::{Affine3A, Mat3A, Quat, UVec2, Vec2, Vec3, Vec3A};
 use renderer::{Engine, Node};
 use winit::{
     dpi::PhysicalSize,
@@ -27,30 +27,35 @@ fn main() {
     // First person camera
     eng.scene.add_allocate_child(
         eng.scene.root,
-        Node::new_camera(Default::default()).with_update(|this, _, ctx| {
-            // Mouse look
-            let look_speed = Vec2::new(6.0, 6.0);
-            let delta_yaw = ctx.input.delta_view.x * look_speed.x;
-            this.transform.matrix3 = Mat3A::from_rotation_y(delta_yaw) * this.transform.matrix3;
+        Node::new_camera(Default::default())
+            .with_transform(
+                Affine3A::from_rotation_y(-std::f32::consts::FRAC_PI_2)
+                    * Affine3A::from_translation(Vec3::new(0.0, 1.0, 0.0)),
+            )
+            .with_update(|this, _, ctx| {
+                // Mouse look
+                let look_speed = Vec2::new(6.0, 6.0);
+                let delta_yaw = ctx.input.delta_view.x * look_speed.x;
+                this.transform.matrix3 = Mat3A::from_rotation_y(delta_yaw) * this.transform.matrix3;
 
-            let (_, rot, _) = this.transform.to_scale_rotation_translation();
-            let (_, cur_pitch, _) = rot.to_euler(glam::EulerRot::YXZ);
-            let delta_pitch = ctx.input.delta_view.y * look_speed.y;
-            let target_pitch = cur_pitch + delta_pitch;
-            let correct_pitch = target_pitch.clamp(-1.55, 1.55);
-            let correct_delta_pitch = correct_pitch - cur_pitch;
-            let pitch_rot = Mat3A::from_quat(Quat::from_axis_angle(
-                this.transform.x_axis.into(),
-                correct_delta_pitch,
-            ));
-            this.transform.matrix3 = pitch_rot * this.transform.matrix3;
+                let (_, rot, _) = this.transform.to_scale_rotation_translation();
+                let (_, cur_pitch, _) = rot.to_euler(glam::EulerRot::YXZ);
+                let delta_pitch = ctx.input.delta_view.y * look_speed.y;
+                let target_pitch = cur_pitch + delta_pitch;
+                let correct_pitch = target_pitch.clamp(-1.55, 1.55);
+                let correct_delta_pitch = correct_pitch - cur_pitch;
+                let pitch_rot = Mat3A::from_quat(Quat::from_axis_angle(
+                    this.transform.x_axis.into(),
+                    correct_delta_pitch,
+                ));
+                this.transform.matrix3 = pitch_rot * this.transform.matrix3;
 
-            // WASD move
-            let speed = if ctx.input.fast { 5.0 } else { 1.5 };
-            let linvel = ctx.input.movement * speed * ctx.time.delta;
-            let movement = this.transform.matrix3 * linvel;
-            this.transform.translation += Vec3A::from(movement);
-        }),
+                // WASD move
+                let speed = if ctx.input.fast { 5.0 } else { 1.5 };
+                let linvel = ctx.input.movement * speed * ctx.time.delta;
+                let movement = this.transform.matrix3 * linvel;
+                this.transform.translation += Vec3A::from(movement);
+            }),
     );
 
     event_loop.run(move |event, _, control_flow| match event {

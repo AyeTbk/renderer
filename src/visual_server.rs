@@ -37,6 +37,7 @@ impl VisualServer {
             depth_texture: renderer
                 .create_depth_texture(window.inner_size().width, window.inner_size().height),
         };
+
         let white_texture = renderer.create_color_texture(1, 1, &[1, 1, 1, 1]);
 
         Self {
