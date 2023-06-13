@@ -62,7 +62,23 @@ impl<'a> GtlfLoader<'a> {
 
 impl<'a> Write<'a> {
     pub fn load(&mut self, read: &'a Read) -> Result<Handle<Scene>, String> {
-        // Preallocate images
+        // Preallocate textures/images
+        for gltf_texture in read.gltf.textures() {
+            let id = gltf_texture.index();
+            if !self.images_ids_map.contains_key(&id) {
+                match gltf_texture.source().source() {
+                    gltf::image::Source::Uri { uri, .. } => {
+                        let full_path = Self::make_full_path(uri, read);
+                        let image = Image::load_from_file(full_path)?;
+                        let handle = self.asset_server.images.allocate(image);
+                        self.images_ids_map.insert(id, handle);
+                    }
+                    gltf::image::Source::View { .. } => {
+                        unimplemented!()
+                    }
+                }
+            }
+        }
         for gltf_image in read.gltf.images() {
             let id = gltf_image.index();
             if !self.images_ids_map.contains_key(&id) {
