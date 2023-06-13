@@ -6,9 +6,6 @@ pub mod arena;
 mod visual_server;
 pub use visual_server::VisualServer;
 
-mod renderer;
-pub use renderer::Renderer;
-
 mod asset_server;
 pub use asset_server::AssetServer;
 

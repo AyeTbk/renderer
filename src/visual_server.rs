@@ -4,10 +4,12 @@ use glam::{Affine3A, Mat4, UVec2, Vec3, Vec3Swizzles, Vec4};
 
 use crate::{
     arena::Handle,
-    renderer::RenderMeshCommand,
     scene::{NodeData, NodeId},
-    AssetServer, Camera, Color, Material, Mesh, Renderer, Scene,
+    AssetServer, Camera, Color, Material, Mesh, Scene,
 };
+
+pub mod renderer;
+use self::renderer::*;
 
 pub struct VisualServer {
     renderer: Renderer,
@@ -191,10 +193,27 @@ impl VisualServer {
             };
 
             let uniform_buffer = self.renderer.create_uniform_buffer(material_uniform);
-            let bind_group = self.renderer.create_material_bind_group(&uniform_buffer);
+            let base_color_texture = self.renderer.create_color_texture(
+                2,
+                2,
+                &[
+                    255, 32, 32, 255, //
+                    32, 255, 32, 255, //
+                    32, 32, 255, 255, //
+                    255, 32, 255, 255, //
+                ],
+            );
+            let sampler = self.renderer.create_sampler();
+            let bind_group = self.renderer.create_material_bind_group(
+                &uniform_buffer,
+                &base_color_texture,
+                &sampler,
+            );
             let render_material = RenderMaterial {
                 bind_group,
                 uniform_buffer,
+                base_color_texture,
+                sampler,
             };
 
             self.render_scene.materials.insert(handle, render_material);
@@ -253,6 +272,10 @@ struct RenderMaterial {
     bind_group: wgpu::BindGroup,
     #[allow(unused)]
     uniform_buffer: wgpu::Buffer,
+    #[allow(unused)]
+    base_color_texture: wgpu::Texture,
+    #[allow(unused)]
+    sampler: wgpu::Sampler,
 }
 
 #[repr(C)]

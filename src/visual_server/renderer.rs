@@ -88,16 +88,34 @@ impl Renderer {
         let material_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 label: Some("material bind group layout"),
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
                     },
-                    count: None,
-                }],
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
             });
         let model_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -196,14 +214,6 @@ impl Renderer {
         self.surface.configure(&self.device, &self.surface_config);
     }
 
-    pub fn clear_color(&mut self) -> Color {
-        self.clear_color
-    }
-
-    pub fn set_clear_color(&mut self, clear_color: Color) {
-        self.clear_color = clear_color;
-    }
-
     pub fn create_vertex_buffer(&mut self, vertices: &[Vertex]) -> wgpu::Buffer {
         self.device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -236,14 +246,30 @@ impl Renderer {
             .write_buffer(buffer, 0, bytemuck::cast_slice(&[uniform]));
     }
 
-    pub fn create_material_bind_group(&mut self, uniform_buffer: &wgpu::Buffer) -> wgpu::BindGroup {
+    pub fn create_material_bind_group(
+        &mut self,
+        uniform_buffer: &wgpu::Buffer,
+        base_color_texture: &wgpu::Texture,
+        sampler: &wgpu::Sampler,
+    ) -> wgpu::BindGroup {
+        let base_color_texture_view = base_color_texture.create_view(&Default::default());
         self.device.create_bind_group(&BindGroupDescriptor {
             label: Some("material bind group"),
             layout: &self.material_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: uniform_buffer.as_entire_binding(),
-            }],
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: uniform_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&base_color_texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(sampler),
+                },
+            ],
         })
     }
 
@@ -256,6 +282,27 @@ impl Renderer {
                 resource: uniform_buffer.as_entire_binding(),
             }],
         })
+    }
+
+    pub fn create_color_texture(&mut self, width: u32, height: u32, data: &[u8]) -> wgpu::Texture {
+        self.device.create_texture_with_data(
+            &self.queue,
+            &wgpu::TextureDescriptor {
+                label: Some("color texture"),
+                size: wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            },
+            data,
+        )
     }
 
     pub fn create_depth_texture(&mut self, width: u32, height: u32) -> wgpu::Texture {
@@ -272,6 +319,19 @@ impl Renderer {
             format: Self::DEPTH_TEXTURE_FORMAT,
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT /*| wgpu::TextureUsages::TEXTURE_BINDING*/,
             view_formats: &[],
+        })
+    }
+
+    pub fn create_sampler(&mut self) -> wgpu::Sampler {
+        self.device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("sampler"),
+            address_mode_u: wgpu::AddressMode::Repeat,
+            address_mode_v: wgpu::AddressMode::Repeat,
+            address_mode_w: wgpu::AddressMode::Repeat,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            ..Default::default()
         })
     }
 
