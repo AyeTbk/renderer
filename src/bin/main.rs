@@ -122,7 +122,9 @@ fn main() {
         },
         Event::DeviceEvent { event, .. } => match event {
             DeviceEvent::MouseMotion { delta } => {
-                eng.input.pointer_delta += Vec2::new(delta.0 as f32, delta.1 as f32);
+                if cursor_grabbed {
+                    eng.input.pointer_delta += Vec2::new(delta.0 as f32, delta.1 as f32);
+                }
             }
             _ => {}
         },

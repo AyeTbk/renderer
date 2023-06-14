@@ -69,7 +69,8 @@ impl<'a> Write<'a> {
                 match gltf_texture.source().source() {
                     gltf::image::Source::Uri { uri, .. } => {
                         let full_path = Self::make_full_path(uri, read);
-                        let image = Image::load_from_file(full_path)?;
+                        let mut image = Image::load_from_file(full_path)?;
+                        image.make_mips(None)?;
                         let handle = self.asset_server.images.allocate(image);
                         self.images_ids_map.insert(id, handle);
                     }

@@ -284,7 +284,13 @@ impl Renderer {
         })
     }
 
-    pub fn create_color_texture(&mut self, width: u32, height: u32, data: &[u8]) -> wgpu::Texture {
+    pub fn create_color_texture(
+        &mut self,
+        width: u32,
+        height: u32,
+        data: &[u8],
+        mip_level_count: u32,
+    ) -> wgpu::Texture {
         self.device.create_texture_with_data(
             &self.queue,
             &wgpu::TextureDescriptor {
@@ -294,7 +300,7 @@ impl Renderer {
                     height,
                     depth_or_array_layers: 1,
                 },
-                mip_level_count: 1,
+                mip_level_count,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
                 format: wgpu::TextureFormat::Rgba8UnormSrgb,
@@ -330,7 +336,8 @@ impl Renderer {
             address_mode_w: wgpu::AddressMode::Repeat,
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Linear,
+            anisotropy_clamp: 16,
             ..Default::default()
         })
     }

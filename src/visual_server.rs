@@ -38,7 +38,7 @@ impl VisualServer {
                 .create_depth_texture(window.inner_size().width, window.inner_size().height),
         };
 
-        let white_texture = renderer.create_color_texture(1, 1, &[1, 1, 1, 1]);
+        let white_texture = renderer.create_color_texture(1, 1, &[1, 1, 1, 1], 1);
 
         Self {
             renderer,
@@ -199,9 +199,12 @@ impl VisualServer {
             let uniform_buffer = self.renderer.create_uniform_buffer(material_uniform);
             let base_color_texture = if let Some(image) = material.base_color_image {
                 let image = asset_server.get_image(image);
-                let texture =
-                    self.renderer
-                        .create_color_texture(image.width(), image.height(), image.data());
+                let texture = self.renderer.create_color_texture(
+                    image.width(),
+                    image.height(),
+                    image.data(),
+                    image.mip_level_count(),
+                );
                 Some(texture)
             } else {
                 None
