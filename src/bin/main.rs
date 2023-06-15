@@ -16,11 +16,12 @@ fn main() {
     let mut eng = Engine::new(&window);
     let scene = eng
         .asset_server
-        .load_scene("data/sponza/Sponza.gltf")
+        // .load_scene("data/sponza/Sponza.gltf")
         // .load_scene("data/flight/FlightHelmet.gltf")
         // .load_scene("data/suzanne/suzanne.gltf")
         // .load_scene("data/tri.glb")
         // .load_scene("data/uvs.glb")
+        .load_scene("data/checker-world.glb")
         .unwrap();
     eng.scene = eng.asset_server.get_scene(scene).clone();
 
@@ -120,14 +121,14 @@ fn main() {
             }
             _ => {}
         },
-        Event::DeviceEvent { event, .. } => match event {
-            DeviceEvent::MouseMotion { delta } => {
-                if cursor_grabbed {
-                    eng.input.pointer_delta += Vec2::new(delta.0 as f32, delta.1 as f32);
-                }
+        Event::DeviceEvent {
+            event: DeviceEvent::MouseMotion { delta },
+            ..
+        } => {
+            if cursor_grabbed {
+                eng.input.pointer_delta += Vec2::new(delta.0 as f32, delta.1 as f32);
             }
-            _ => {}
-        },
+        }
         Event::RedrawRequested(window_id) if window_id == window.id() => {
             eng.update();
             match eng.visual_server.render() {

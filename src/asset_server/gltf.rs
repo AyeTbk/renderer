@@ -41,7 +41,7 @@ impl<'a> GtlfLoader<'a> {
 
         Ok(Self {
             read: Read {
-                base_path: path.parent().unwrap_or(&Path::new("")).to_path_buf(),
+                base_path: path.parent().unwrap_or(Path::new("")).to_path_buf(),
                 gltf,
                 builtin_bin,
             },
@@ -65,20 +65,22 @@ impl<'a> Write<'a> {
         // Preallocate textures/images
         for gltf_texture in read.gltf.textures() {
             let id = gltf_texture.index();
-            if !self.images_ids_map.contains_key(&id) {
-                match gltf_texture.source().source() {
-                    gltf::image::Source::Uri { uri, .. } => {
-                        let full_path = Self::make_full_path(uri, read);
-                        let mut image = Image::load_from_file(full_path)?;
-                        image.make_mips(None)?;
-                        let handle = self.asset_server.images.allocate(image);
-                        self.images_ids_map.insert(id, handle);
-                    }
-                    gltf::image::Source::View { .. } => {
-                        unimplemented!()
-                    }
+            let mut image = match gltf_texture.source().source() {
+                gltf::image::Source::Uri { uri, .. } => {
+                    let full_path = Self::make_full_path(uri, read);
+                    Image::load_from_file(full_path)?
                 }
-            }
+                gltf::image::Source::View { view, .. } => {
+                    if let Source::Uri(path) = view.buffer().source() {
+                        self.load_external_bin(path, read)?;
+                    }
+                    let bytes = self.get_bytes_from_view(&view, read)?;
+                    Image::load_from_memory(bytes)?
+                }
+            };
+            image.make_mips(None)?;
+            let handle = self.asset_server.images.allocate(image);
+            self.images_ids_map.insert(id, handle);
         }
 
         // Preallocate materials
@@ -88,31 +90,27 @@ impl<'a> Write<'a> {
         );
         for gltf_material in read.gltf.materials() {
             let id = gltf_material.index();
-            if !self.material_ids_map.contains_key(&id) {
-                let pbr = gltf_material.pbr_metallic_roughness();
-                let handle = self.asset_server.materials.allocate(Material {
-                    base_color: pbr.base_color_factor().into(),
-                    base_color_image: pbr.base_color_texture().and_then(|info| {
-                        let id = info.texture().index();
-                        self.images_ids_map.get(&id).copied()
-                    }),
-                });
-                self.material_ids_map.insert(id, handle);
-            }
+            let pbr = gltf_material.pbr_metallic_roughness();
+            let handle = self.asset_server.materials.allocate(Material {
+                base_color: pbr.base_color_factor().into(),
+                base_color_image: pbr.base_color_texture().and_then(|info| {
+                    let id = info.texture().index();
+                    self.images_ids_map.get(&id).copied()
+                }),
+            });
+            self.material_ids_map.insert(id, handle);
         }
 
         // Preallocate meshes
         for gltf_mesh in read.gltf.meshes() {
             let id = gltf_mesh.index();
-            if !self.meshes_ids_map.contains_key(&id) {
-                let mesh = self.gltf_mesh_to_mesh(&gltf_mesh, read)?;
-                let handle = self.asset_server.meshes.allocate(mesh);
-                self.meshes_ids_map.insert(id, handle);
-            }
+            let mesh = self.gltf_mesh_to_mesh(&gltf_mesh, read)?;
+            let handle = self.asset_server.meshes.allocate(mesh);
+            self.meshes_ids_map.insert(id, handle);
         }
 
         // Load scene
-        for gltf_scene in read.gltf.scenes() {
+        if let Some(gltf_scene) = read.gltf.scenes().next() {
             let mut scene = Scene::new_empty();
 
             for gltf_node in gltf_scene.nodes() {
@@ -186,7 +184,7 @@ impl<'a> Write<'a> {
                         None
                     }
                 })
-                .ok_or_else(|| format!("missing positions attribute"))?;
+                .ok_or_else(|| "missing positions attribute".to_string())?;
 
             assert!(positions_accessor.data_type() == gltf::accessor::DataType::F32);
             assert!(positions_accessor.view().is_some());
@@ -211,7 +209,7 @@ impl<'a> Write<'a> {
                         None
                     }
                 })
-                .ok_or_else(|| format!("missing normals attribute"))?;
+                .ok_or_else(|| "missing normals attribute".to_string())?;
 
             assert!(normals_accessor.data_type() == gltf::accessor::DataType::F32);
             assert!(normals_accessor.view().is_some());
@@ -236,7 +234,7 @@ impl<'a> Write<'a> {
                         None
                     }
                 })
-                .ok_or_else(|| format!("missing uvs attribute"))?;
+                .ok_or_else(|| "missing uvs attribute".to_string())?;
 
             assert!(uvs_accessor.data_type() == gltf::accessor::DataType::F32);
             assert!(uvs_accessor.view().is_some());
@@ -270,7 +268,7 @@ impl<'a> Write<'a> {
                 let read_pos_coord = |j: usize| {
                     let coord_idx = position_idx + j * size_of::<f32>();
                     let coord_bytes = [
-                        positions_bytes[coord_idx + 0],
+                        positions_bytes[coord_idx],
                         positions_bytes[coord_idx + 1],
                         positions_bytes[coord_idx + 2],
                         positions_bytes[coord_idx + 3],
@@ -281,7 +279,7 @@ impl<'a> Write<'a> {
                 let read_n_coord = |j: usize| {
                     let coord_idx = normal_idx + j * size_of::<f32>();
                     let coord_bytes = [
-                        normals_bytes[coord_idx + 0],
+                        normals_bytes[coord_idx],
                         normals_bytes[coord_idx + 1],
                         normals_bytes[coord_idx + 2],
                         normals_bytes[coord_idx + 3],
@@ -292,7 +290,7 @@ impl<'a> Write<'a> {
                 let read_uv_coord = |j: usize| {
                     let coord_idx = uv_idx + j * size_of::<f32>();
                     let coord_bytes = [
-                        uvs_bytes[coord_idx + 0],
+                        uvs_bytes[coord_idx],
                         uvs_bytes[coord_idx + 1],
                         uvs_bytes[coord_idx + 2],
                         uvs_bytes[coord_idx + 3],
@@ -350,6 +348,16 @@ impl<'a> Write<'a> {
         }
 
         Ok(Mesh { submeshes })
+    }
+
+    fn get_bytes_from_view(
+        &self,
+        view: &buffer::View<'a>,
+        read: &'a Read,
+    ) -> Result<&[u8], String> {
+        let bin = self.get_bin_from_buffer_source(view.buffer().source(), read)?;
+        let bytes = &bin[view.offset()..view.offset() + view.length()];
+        Ok(bytes)
     }
 
     fn get_bin_from_buffer_source(

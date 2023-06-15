@@ -93,7 +93,8 @@ impl Engine {
             _ => (),
         }
 
-        for child_id in self.scene.children_of(node_id).to_vec() {
+        let children = self.scene.children_of(node_id).to_vec();
+        for child_id in children {
             self.update_node_recursive(child_id, node_global_transform);
         }
     }

@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{hash_map::Entry, HashMap};
 
 use glam::{Affine3A, Mat4, UVec2, Vec3, Vec3Swizzles, Vec4};
 
@@ -25,7 +25,7 @@ impl VisualServer {
             projection_view: Camera::default().projection_matrix().to_cols_array(),
             view_pos: Vec4::default().to_array(),
             ambient_light: Color::new(0.3, 0.5, 0.9, 0.05).to_array(),
-            sun_color: Color::new(1.0, 0.78, 0.7, 1.0).to_array(),
+            sun_color: Color::new(1.0, 0.9, 0.8, 1.0).to_array(),
             sun_direction: Vec3::new(0.1, -1.0, 0.4)
                 .normalize_or_zero()
                 .xyzz()
@@ -168,12 +168,14 @@ impl VisualServer {
     }
 
     fn register_mesh(&mut self, handle: Handle<Mesh>, asset_server: &AssetServer) {
-        if !self.render_scene.meshes.contains_key(&handle) {
+        let mut materials_to_register = Vec::new();
+
+        if let Entry::Vacant(e) = self.render_scene.meshes.entry(handle) {
             let mesh = asset_server.get_mesh(handle);
 
             let mut render_submeshes = Vec::new();
             for submesh in &mesh.submeshes {
-                self.register_material(submesh.material, asset_server);
+                materials_to_register.push(submesh.material);
 
                 render_submeshes.push(RenderSubmesh {
                     vertex_buffer: self.renderer.create_vertex_buffer(&submesh.vertices),
@@ -185,12 +187,16 @@ impl VisualServer {
             let render_mesh = RenderMesh {
                 submeshes: render_submeshes,
             };
-            self.render_scene.meshes.insert(handle, render_mesh);
+            e.insert(render_mesh);
+        }
+
+        for material_handle in materials_to_register {
+            self.register_material(material_handle, asset_server);
         }
     }
 
     fn register_material(&mut self, handle: Handle<Material>, asset_server: &AssetServer) {
-        if !self.render_scene.materials.contains_key(&handle) {
+        if let Entry::Vacant(e) = self.render_scene.materials.entry(handle) {
             let material = asset_server.get_material(handle);
             let material_uniform = MaterialUniform {
                 base_color: material.base_color.into(),
@@ -225,7 +231,7 @@ impl VisualServer {
                 sampler,
             };
 
-            self.render_scene.materials.insert(handle, render_material);
+            e.insert(render_material);
         }
     }
 }
