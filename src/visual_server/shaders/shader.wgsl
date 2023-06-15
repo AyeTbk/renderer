@@ -61,6 +61,12 @@ var material_sampler: sampler;
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
+    let base_color = material.base_color.rgba * textureSample(base_color_texture, material_sampler, in.uv).rgba;
+
+    if base_color.a < 0.5 {
+        discard;
+    }
+
     let ambient_light = scene.ambient_light.rgb * scene.ambient_light.a;
     
     // Sun light (blinn-phong)
@@ -75,10 +81,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     let sun_spec = scene.sun_color.rgb * scene.sun_color.a * sun_spec_intensity;
     
     let sun_light = sun_diffuse + sun_spec;
-    
-    let base_color = material.base_color.rgb * textureSample(base_color_texture, material_sampler, in.uv).rgb;
-    
-    let color = (ambient_light + sun_light) * base_color;
+        
+    let color = (ambient_light + sun_light) * base_color.rgb;
     
     return vec4f(color, 1.0);
 }
