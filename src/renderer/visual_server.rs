@@ -41,8 +41,7 @@ impl VisualServer {
 
         let white_texture = backend.create_color_texture(1, 1, &[255, 255, 255, 255], 1);
 
-        let mut pipeline = Pipeline::new(&mut backend);
-        pipeline.set_render_target_sample_count(4, &mut backend);
+        let pipeline = Pipeline::new(&mut backend);
 
         Self {
             backend,
@@ -62,6 +61,11 @@ impl VisualServer {
 
         self.pipeline
             .set_render_target_size(render_size, &mut self.backend)
+    }
+
+    pub fn set_msaa(&mut self, sample_count: u32) {
+        self.pipeline
+            .set_render_target_sample_count(sample_count, &mut self.backend);
     }
 
     pub fn set_camera(&mut self, transform: &Affine3A, camera: &Camera) {

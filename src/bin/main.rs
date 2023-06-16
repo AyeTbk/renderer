@@ -97,6 +97,14 @@ fn main() {
                 eng.input
                     .keymap
                     .insert(*key, *state == ElementState::Pressed);
+
+                if *state == ElementState::Pressed {
+                    if *key == VirtualKeyCode::M {
+                        eng.visual_server.set_msaa(4);
+                    } else if *key == VirtualKeyCode::N {
+                        eng.visual_server.set_msaa(1);
+                    }
+                }
             }
             WindowEvent::CursorMoved { position, .. } => {
                 let pointer_pos = Vec2::new(position.x as f32, position.y as f32);
