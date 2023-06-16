@@ -3,8 +3,8 @@ pub use engine::Engine;
 
 pub mod arena;
 
-mod visual_server;
-pub use visual_server::VisualServer;
+mod renderer;
+pub use renderer::VisualServer;
 
 mod asset_server;
 pub use asset_server::AssetServer;

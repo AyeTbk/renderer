@@ -38,7 +38,7 @@ fn vs_main(
     out.frag_pos = vertex_pos_in_world_space.xyz;
     
     // FIXME: This is incorrect, normals will be wrong with a non-uniform scaling factor (look up 'normal matrix')
-    out.normal = normalize((model.transform * vec4f(vertex.normal, 0.0)).xyz);
+    out.normal = (model.transform * vec4f(vertex.normal, 0.0)).xyz;
 
     out.uv = vertex.uv;
 
@@ -58,9 +58,10 @@ var base_color_texture: texture_2d<f32>;
 var material_sampler: sampler;
 
 
-
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
+    let normal = normalize(in.normal);
+
     let base_color = material.base_color.rgba * textureSample(base_color_texture, material_sampler, in.uv).rgba;
 
     if base_color.a < 0.5 {
@@ -71,18 +72,18 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     
     // Sun light (blinn-phong)
     let from_frag_to_light_dir = -scene.sun_dir.xyz;
-    let sun_diffuse_intensity = max(dot(in.normal, from_frag_to_light_dir), 0.0);
+    let sun_diffuse_intensity = max(dot(normal, from_frag_to_light_dir), 0.0);
     let sun_diffuse = scene.sun_color.rgb * scene.sun_color.a * sun_diffuse_intensity;
 
-    let shininess = 32.0;
+    let shininess = 8.0;
     let from_frag_to_view_dir = normalize(scene.view_pos.xyz - in.frag_pos);
     let halfway_dir = normalize(from_frag_to_light_dir + from_frag_to_view_dir);
-    let sun_spec_intensity = pow(max(dot(in.normal, halfway_dir), 0.0), shininess);
+    let sun_spec_intensity = pow(max(dot(normal, halfway_dir), 0.0), shininess);
     let sun_spec = scene.sun_color.rgb * scene.sun_color.a * sun_spec_intensity;
     
     let sun_light = sun_diffuse + sun_spec;
         
     let color = (ambient_light + sun_light) * base_color.rgb;
     
-    return vec4f(color, 1.0);
+    return vec4f(color, base_color.a);
 }

@@ -16,12 +16,12 @@ fn main() {
     let mut eng = Engine::new(&window);
     let scene = eng
         .asset_server
-        // .load_scene("data/sponza/Sponza.gltf")
+        .load_scene("data/sponza/Sponza.gltf")
         // .load_scene("data/flight/FlightHelmet.gltf")
         // .load_scene("data/suzanne/suzanne.gltf")
         // .load_scene("data/tri.glb")
         // .load_scene("data/uvs.glb")
-        .load_scene("data/checker-world.glb")
+        // .load_scene("data/checker-world.glb")
         .unwrap();
     eng.scene = eng.asset_server.get_scene(scene).clone();
 

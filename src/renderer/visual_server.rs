@@ -8,19 +8,22 @@ use crate::{
     AssetServer, Camera, Color, Material, Mesh, Scene,
 };
 
-pub mod renderer;
-use self::renderer::*;
+use super::{
+    backend::{Backend, RenderMeshCommand},
+    pipeline::Pipeline,
+};
 
 pub struct VisualServer {
-    renderer: Renderer,
+    backend: Backend,
     render_scene: RenderScene,
     render_scene_data: RenderSceneData,
     white_texture: wgpu::Texture,
+    pipeline: Pipeline,
 }
 
 impl VisualServer {
     pub fn new(window: &winit::window::Window) -> Self {
-        let mut renderer = Renderer::new(window);
+        let mut backend = Backend::new(window);
         let scene_uniform = SceneUniform {
             projection_view: Camera::default().projection_matrix().to_cols_array(),
             view_pos: Vec4::default().to_array(),
@@ -33,31 +36,32 @@ impl VisualServer {
         };
         let render_scene_data = RenderSceneData {
             uniform: scene_uniform,
-            uniform_buffer: renderer.create_uniform_buffer(scene_uniform),
-            depth_texture: renderer
-                .create_depth_texture(window.inner_size().width, window.inner_size().height),
+            uniform_buffer: backend.create_uniform_buffer(scene_uniform),
         };
 
-        let white_texture = renderer.create_color_texture(1, 1, &[1, 1, 1, 1], 1);
+        let white_texture = backend.create_color_texture(1, 1, &[255, 255, 255, 255], 1);
+
+        let mut pipeline = Pipeline::new(&mut backend);
+        pipeline.set_render_target_sample_count(4, &mut backend);
 
         Self {
-            renderer,
+            backend,
             render_scene: Default::default(),
             render_scene_data,
             white_texture,
+            pipeline,
         }
     }
 
     pub fn render_size(&self) -> UVec2 {
-        self.renderer.render_size()
+        self.backend.render_size()
     }
 
     pub fn set_render_size(&mut self, render_size: UVec2) {
-        self.renderer.set_render_size(render_size);
+        self.backend.set_render_size(render_size);
 
-        self.render_scene_data.depth_texture = self
-            .renderer
-            .create_depth_texture(render_size.x, render_size.y);
+        self.pipeline
+            .set_render_target_size(render_size, &mut self.backend)
     }
 
     pub fn set_camera(&mut self, transform: &Affine3A, camera: &Camera) {
@@ -65,7 +69,7 @@ impl VisualServer {
             (camera.projection_matrix() * transform.inverse()).to_cols_array();
         self.render_scene_data.uniform.view_pos = transform.translation.xyzz().to_array();
 
-        self.renderer.update_uniform_buffer(
+        self.backend.update_uniform_buffer(
             &self.render_scene_data.uniform_buffer,
             self.render_scene_data.uniform,
         );
@@ -89,11 +93,14 @@ impl VisualServer {
             }
         }
 
-        self.renderer.render_meshes(
-            &self.render_scene_data.depth_texture,
+        self.pipeline.render(
             &self.render_scene_data.uniform_buffer,
-            render_mesh_commands.into_iter(),
-        )?;
+            &render_mesh_commands,
+            &mut self.backend,
+        );
+
+        self.backend
+            .render_texture(&self.pipeline.render_target_texture())?;
 
         Ok(())
     }
@@ -154,8 +161,8 @@ impl VisualServer {
         let model_uniform = ModelUniform {
             transform: Mat4::from(transform).to_cols_array(),
         };
-        let model_uniform_buffer = self.renderer.create_uniform_buffer(model_uniform);
-        let model_bind_group = self.renderer.create_model_bind_group(&model_uniform_buffer);
+        let model_uniform_buffer = self.backend.create_uniform_buffer(model_uniform);
+        let model_bind_group = self.backend.create_model_bind_group(&model_uniform_buffer);
 
         self.render_scene.mesh_instances.insert(
             id,
@@ -178,8 +185,8 @@ impl VisualServer {
                 materials_to_register.push(submesh.material);
 
                 render_submeshes.push(RenderSubmesh {
-                    vertex_buffer: self.renderer.create_vertex_buffer(&submesh.vertices),
-                    index_buffer: self.renderer.create_index_buffer(&submesh.indices),
+                    vertex_buffer: self.backend.create_vertex_buffer(&submesh.vertices),
+                    index_buffer: self.backend.create_index_buffer(&submesh.indices),
                     index_count: submesh.indices.len() as u32,
                     material: submesh.material,
                 })
@@ -202,10 +209,10 @@ impl VisualServer {
                 base_color: material.base_color.into(),
             };
 
-            let uniform_buffer = self.renderer.create_uniform_buffer(material_uniform);
+            let uniform_buffer = self.backend.create_uniform_buffer(material_uniform);
             let base_color_texture = if let Some(image) = material.base_color_image {
                 let image = asset_server.get_image(image);
-                let texture = self.renderer.create_color_texture(
+                let texture = self.backend.create_color_texture(
                     image.width(),
                     image.height(),
                     image.data(),
@@ -215,11 +222,11 @@ impl VisualServer {
             } else {
                 None
             };
-            let sampler = self.renderer.create_sampler();
+            let sampler = self.backend.create_sampler();
 
             let base_color_texture_ref = base_color_texture.as_ref().unwrap_or(&self.white_texture);
 
-            let bind_group = self.renderer.create_material_bind_group(
+            let bind_group = self.backend.create_material_bind_group(
                 &uniform_buffer,
                 base_color_texture_ref,
                 &sampler,
@@ -239,7 +246,6 @@ impl VisualServer {
 struct RenderSceneData {
     uniform: SceneUniform,
     uniform_buffer: wgpu::Buffer,
-    depth_texture: wgpu::Texture,
 }
 
 #[repr(C)]
