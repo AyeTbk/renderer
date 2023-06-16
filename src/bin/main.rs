@@ -104,6 +104,18 @@ fn main() {
                     } else if *key == VirtualKeyCode::N {
                         eng.visual_server.set_msaa(1);
                     }
+
+                    if *key == VirtualKeyCode::P {
+                        eng.visual_server.set_render_size_factor(4.0);
+                    } else if *key == VirtualKeyCode::O {
+                        eng.visual_server.set_render_size_factor(2.0);
+                    } else if *key == VirtualKeyCode::I {
+                        eng.visual_server.set_render_size_factor(1.0);
+                    } else if *key == VirtualKeyCode::U {
+                        eng.visual_server.set_render_size_factor(0.5);
+                    } else if *key == VirtualKeyCode::Y {
+                        eng.visual_server.set_render_size_factor(0.25);
+                    }
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {

@@ -323,14 +323,14 @@ impl Backend {
         })
     }
 
-    pub fn create_nearest_sampler(&mut self) -> wgpu::Sampler {
+    pub fn create_show_texture_sampler(&mut self) -> wgpu::Sampler {
         self.device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("nearest sampler"),
             address_mode_u: wgpu::AddressMode::Repeat,
             address_mode_v: wgpu::AddressMode::Repeat,
             address_mode_w: wgpu::AddressMode::Repeat,
             mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Linear,
             mipmap_filter: wgpu::FilterMode::Nearest,
             anisotropy_clamp: 1,
             ..Default::default()
@@ -342,7 +342,7 @@ impl Backend {
         let surface_view = surface_texture.texture.create_view(&Default::default());
 
         let texture_view = texture.create_view(&Default::default());
-        let sampler = self.create_nearest_sampler();
+        let sampler = self.create_show_texture_sampler();
 
         let bind_group = self.device.create_bind_group(&BindGroupDescriptor {
             label: Some("show texture bind group"),

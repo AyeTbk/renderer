@@ -15,6 +15,7 @@ use super::{
 
 pub struct VisualServer {
     backend: Backend,
+    render_size_factor: f32,
     render_scene: RenderScene,
     render_scene_data: RenderSceneData,
     white_texture: wgpu::Texture,
@@ -45,6 +46,7 @@ impl VisualServer {
 
         Self {
             backend,
+            render_size_factor: 1.0,
             render_scene: Default::default(),
             render_scene_data,
             white_texture,
@@ -59,8 +61,13 @@ impl VisualServer {
     pub fn set_render_size(&mut self, render_size: UVec2) {
         self.backend.set_render_size(render_size);
 
-        self.pipeline
-            .set_render_target_size(render_size, &mut self.backend)
+        self.update_pipeline_render_size();
+    }
+
+    pub fn set_render_size_factor(&mut self, factor: f32) {
+        self.render_size_factor = factor;
+
+        self.update_pipeline_render_size();
     }
 
     pub fn set_msaa(&mut self, sample_count: u32) {
@@ -128,6 +135,13 @@ impl VisualServer {
 
     pub fn reset_scene(&mut self) {
         self.render_scene = Default::default();
+    }
+
+    fn update_pipeline_render_size(&mut self) {
+        let sacled_render_size =
+            (self.render_size().as_vec2() * self.render_size_factor).as_uvec2();
+        self.pipeline
+            .set_render_target_size(sacled_render_size, &mut self.backend)
     }
 
     fn register_node_recursive(
