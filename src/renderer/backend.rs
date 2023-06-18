@@ -1,6 +1,9 @@
 use glam::UVec2;
 use pollster::FutureExt;
-use wgpu::{util::DeviceExt, BindGroupDescriptor};
+use wgpu::{
+    util::{BufferInitDescriptor, DeviceExt},
+    BindGroupDescriptor,
+};
 
 use crate::{Color, Vertex};
 
@@ -14,6 +17,7 @@ pub struct Backend {
     //
     show_texture_pipeline: wgpu::RenderPipeline,
     show_texture_bind_group_layout: wgpu::BindGroupLayout,
+    show_texture_uniform_buffer: wgpu::Buffer,
     //
     material_bind_group_layout: wgpu::BindGroupLayout,
     model_bind_group_layout: wgpu::BindGroupLayout,
@@ -124,6 +128,16 @@ impl Backend {
                     wgpu::BindGroupLayoutEntry {
                         binding: 0,
                         visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
                         ty: wgpu::BindingType::Texture {
                             sample_type: wgpu::TextureSampleType::Float { filterable: true },
                             view_dimension: wgpu::TextureViewDimension::D2,
@@ -132,13 +146,20 @@ impl Backend {
                         count: None,
                     },
                     wgpu::BindGroupLayoutEntry {
-                        binding: 1,
+                        binding: 2,
                         visibility: wgpu::ShaderStages::FRAGMENT,
                         ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                         count: None,
                     },
                 ],
             });
+        let show_texture_uniform_buffer = device.create_buffer_init(&BufferInitDescriptor {
+            label: Some("show texture uniform buffer"),
+            contents: bytemuck::cast_slice(&[ShowTextureUniform {
+                render_size: render_size.to_array(),
+            }]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("show texture shader"),
@@ -192,6 +213,7 @@ impl Backend {
             queue,
             show_texture_pipeline,
             show_texture_bind_group_layout,
+            show_texture_uniform_buffer,
             material_bind_group_layout,
             model_bind_group_layout,
         }
@@ -210,6 +232,15 @@ impl Backend {
         self.surface_config.width = render_size.x;
         self.surface_config.height = render_size.y;
         self.surface.configure(&self.device, &self.surface_config);
+
+        // self.update_uniform_buffer causes borrowchecker issues here so fuck it
+        self.queue.write_buffer(
+            &self.show_texture_uniform_buffer,
+            0,
+            bytemuck::cast_slice(&[ShowTextureUniform {
+                render_size: render_size.to_array(),
+            }]),
+        );
     }
 
     pub fn create_vertex_buffer(&mut self, vertices: &[Vertex]) -> wgpu::Buffer {
@@ -325,7 +356,7 @@ impl Backend {
 
     pub fn create_show_texture_sampler(&mut self) -> wgpu::Sampler {
         self.device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("nearest sampler"),
+            label: Some("show texture sampler"),
             address_mode_u: wgpu::AddressMode::Repeat,
             address_mode_v: wgpu::AddressMode::Repeat,
             address_mode_w: wgpu::AddressMode::Repeat,
@@ -350,10 +381,14 @@ impl Backend {
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&texture_view),
+                    resource: self.show_texture_uniform_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&texture_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
                     resource: wgpu::BindingResource::Sampler(&sampler),
                 },
             ],
@@ -394,6 +429,12 @@ impl Backend {
 
 pub trait Uniform: Clone + Copy + bytemuck::Pod + bytemuck::Zeroable {}
 impl<T> Uniform for T where T: Clone + Copy + bytemuck::Pod + bytemuck::Zeroable {}
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct ShowTextureUniform {
+    render_size: [u32; 2],
+}
 
 pub struct RenderMeshCommand<'a> {
     pub material_bind_group: &'a wgpu::BindGroup,
