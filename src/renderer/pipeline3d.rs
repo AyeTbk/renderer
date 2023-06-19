@@ -1,3 +1,5 @@
+use wgpu::CommandEncoder;
+
 use crate::Vertex;
 
 use super::{
@@ -11,6 +13,7 @@ pub struct Pipeline3d {
 }
 
 pub struct Pipeline3dData {
+    pub scene_bind_group: wgpu::BindGroup,
     pub render_target_info: RenderTargetInfo,
     pub pipeline_layouts: PipelineLayouts,
     pub bind_group_layouts: BindGroupLayouts,
@@ -22,7 +25,11 @@ pub struct Step {
 }
 
 impl Pipeline3d {
-    pub fn new(render_target_info: RenderTargetInfo, backend: &mut Backend) -> Self {
+    pub fn new(
+        scene_uniform_buffer: &wgpu::Buffer,
+        render_target_info: RenderTargetInfo,
+        backend: &mut Backend,
+    ) -> Self {
         let shaders = Shaders {
             render_meshes: backend
                 .device
@@ -112,12 +119,25 @@ impl Pipeline3d {
                 }),
         };
 
+        let scene_bind_group = backend
+            .device
+            .create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("scene bind group"),
+                layout: &bind_group_layouts.scene,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: scene_uniform_buffer.as_entire_binding(),
+                }],
+            });
+
         let data = Pipeline3dData {
+            scene_bind_group,
             render_target_info,
             pipeline_layouts,
             bind_group_layouts,
             shaders,
         };
+
         let steps = Self::build_steps(&data, backend);
 
         Self { steps, data }
@@ -134,60 +154,38 @@ impl Pipeline3d {
 
     pub fn render(
         &self,
-        scene_uniform_buffer: &wgpu::Buffer,
+        encoder: &mut CommandEncoder,
         render_commands: &[RenderMeshCommand],
         render_target: &RenderTarget,
-        backend: &mut Backend,
     ) {
-        let scene_bind_group = backend
-            .device
-            .create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("scene bind group"),
-                layout: &self.data.bind_group_layouts.scene,
-                entries: &[wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: scene_uniform_buffer.as_entire_binding(),
-                }],
-            });
-
         let (color_attachment, depth_stencil_attachment) = render_target.render_pass_attachments();
 
-        let mut encoder = backend
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("render encoder"),
-            });
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("render pass"),
+            color_attachments: &[Some(color_attachment)],
+            depth_stencil_attachment: Some(depth_stencil_attachment),
+        });
 
-        {
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("render pass"),
-                color_attachments: &[Some(color_attachment)],
-                depth_stencil_attachment: Some(depth_stencil_attachment),
-            });
+        for step in &self.steps {
+            render_pass.set_pipeline(&step.pipeline);
+            render_pass.set_bind_group(0, &self.data.scene_bind_group, &[]);
 
-            for step in &self.steps {
-                render_pass.set_pipeline(&step.pipeline);
-                render_pass.set_bind_group(0, &scene_bind_group, &[]);
+            for render_command in render_commands {
+                let RenderMeshCommand {
+                    material_bind_group,
+                    model_bind_group,
+                    vertex_buffer,
+                    index_buffer,
+                    index_count,
+                } = render_command;
 
-                for render_command in render_commands {
-                    let RenderMeshCommand {
-                        material_bind_group,
-                        model_bind_group,
-                        vertex_buffer,
-                        index_buffer,
-                        index_count,
-                    } = render_command;
-
-                    render_pass.set_bind_group(1, material_bind_group, &[]);
-                    render_pass.set_bind_group(2, model_bind_group, &[]);
-                    render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-                    render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                    render_pass.draw_indexed(0..*index_count, 0, 0..1);
-                }
+                render_pass.set_bind_group(1, material_bind_group, &[]);
+                render_pass.set_bind_group(2, model_bind_group, &[]);
+                render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+                render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                render_pass.draw_indexed(0..*index_count, 0, 0..1);
             }
         }
-
-        backend.queue.submit(Some(encoder.finish()));
     }
 
     fn rebuild_steps(&mut self, backend: &mut Backend) {

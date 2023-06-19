@@ -50,7 +50,11 @@ impl VisualServer {
             Backend::DEPTH_TEXTURE_FORMAT,
             &mut backend,
         );
-        let pipeline = Pipeline3d::new(render_target.info(), &mut backend);
+        let pipeline = Pipeline3d::new(
+            &render_scene_data.uniform_buffer,
+            render_target.info(),
+            &mut backend,
+        );
 
         Self {
             backend,
@@ -114,12 +118,17 @@ impl VisualServer {
             }
         }
 
-        self.pipeline3d.render(
-            &self.render_scene_data.uniform_buffer,
-            &render_mesh_commands,
-            &self.render_target,
-            &mut self.backend,
-        );
+        let mut encoder =
+            self.backend
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("render encoder"),
+                });
+
+        self.pipeline3d
+            .render(&mut encoder, &render_mesh_commands, &self.render_target);
+
+        self.backend.queue.submit(Some(encoder.finish()));
 
         self.backend
             .render_texture(&self.render_target.output_color_texture())?;
