@@ -9,8 +9,8 @@ use crate::{
 };
 
 use super::{
-    backend::{Backend, RenderMeshCommand},
-    pipeline::Pipeline,
+    backend::Backend,
+    pipeline3d::{Pipeline3d, RenderMeshCommand},
 };
 
 pub struct VisualServer {
@@ -19,7 +19,8 @@ pub struct VisualServer {
     render_scene: RenderScene,
     render_scene_data: RenderSceneData,
     white_texture: wgpu::Texture,
-    pipeline: Pipeline,
+    render_target: RenderTarget,
+    pipeline3d: Pipeline3d,
 }
 
 impl VisualServer {
@@ -42,7 +43,14 @@ impl VisualServer {
 
         let white_texture = backend.create_color_texture(1, 1, &[255, 255, 255, 255], 1);
 
-        let pipeline = Pipeline::new(&mut backend);
+        let render_target = create_render_target(
+            backend.render_size(),
+            1,
+            wgpu::TextureFormat::Rgba8UnormSrgb,
+            Backend::DEPTH_TEXTURE_FORMAT,
+            &mut backend,
+        );
+        let pipeline = Pipeline3d::new(render_target.info(), &mut backend);
 
         Self {
             backend,
@@ -50,7 +58,8 @@ impl VisualServer {
             render_scene: Default::default(),
             render_scene_data,
             white_texture,
-            pipeline,
+            render_target,
+            pipeline3d: pipeline,
         }
     }
 
@@ -61,18 +70,19 @@ impl VisualServer {
     pub fn set_render_size(&mut self, render_size: UVec2) {
         self.backend.set_render_size(render_size);
 
-        self.update_pipeline_render_size();
+        self.recreate_render_target();
     }
 
     pub fn set_render_size_factor(&mut self, factor: f32) {
         self.render_size_factor = factor;
 
-        self.update_pipeline_render_size();
+        self.recreate_render_target();
     }
 
     pub fn set_msaa(&mut self, sample_count: u32) {
-        self.pipeline
-            .set_render_target_sample_count(sample_count, &mut self.backend);
+        self.render_target.sample_count = sample_count;
+
+        self.recreate_render_target();
     }
 
     pub fn set_camera(&mut self, transform: &Affine3A, camera: &Camera) {
@@ -104,14 +114,15 @@ impl VisualServer {
             }
         }
 
-        self.pipeline.render(
+        self.pipeline3d.render(
             &self.render_scene_data.uniform_buffer,
             &render_mesh_commands,
+            &self.render_target,
             &mut self.backend,
         );
 
         self.backend
-            .render_texture(&self.pipeline.render_target_texture())?;
+            .render_texture(&self.render_target.output_color_texture())?;
 
         Ok(())
     }
@@ -137,11 +148,21 @@ impl VisualServer {
         self.render_scene = Default::default();
     }
 
-    fn update_pipeline_render_size(&mut self) {
-        let sacled_render_size =
+    fn recreate_render_target(&mut self) {
+        let scaled_render_size =
             (self.render_size().as_vec2() * self.render_size_factor).as_uvec2();
-        self.pipeline
-            .set_render_target_size(sacled_render_size, &mut self.backend)
+
+        let info = self.render_target.info();
+        self.render_target = create_render_target(
+            scaled_render_size,
+            info.sample_count,
+            info.color_format,
+            info.depth_format,
+            &mut self.backend,
+        );
+
+        self.pipeline3d
+            .update_render_target_info(self.render_target.info(), &mut self.backend);
     }
 
     fn register_node_recursive(
@@ -321,4 +342,166 @@ struct RenderMaterial {
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct MaterialUniform {
     base_color: [f32; 4],
+}
+
+pub struct RenderTarget {
+    pub size: UVec2,
+    pub sample_count: u32,
+    pub color_format: wgpu::TextureFormat,
+    pub depth_format: wgpu::TextureFormat,
+    pub texture: RenderTargetTexture,
+}
+
+pub enum RenderTargetTexture {
+    Simple {
+        color: wgpu::Texture,
+        color_view: wgpu::TextureView,
+        depth: wgpu::Texture,
+        depth_view: wgpu::TextureView,
+    },
+    Multisampled {
+        color: wgpu::Texture,
+        color_view: wgpu::TextureView,
+        depth: wgpu::Texture,
+        depth_view: wgpu::TextureView,
+        resolve: wgpu::Texture,
+        resolve_view: wgpu::TextureView,
+    },
+}
+
+pub struct RenderTargetInfo {
+    pub sample_count: u32,
+    pub color_format: wgpu::TextureFormat,
+    pub depth_format: wgpu::TextureFormat,
+}
+
+impl RenderTarget {
+    pub fn info(&self) -> RenderTargetInfo {
+        RenderTargetInfo {
+            sample_count: self.sample_count,
+            color_format: self.color_format,
+            depth_format: self.depth_format,
+        }
+    }
+
+    pub fn output_color_texture(&self) -> &wgpu::Texture {
+        match &self.texture {
+            RenderTargetTexture::Simple { color, .. } => color,
+            RenderTargetTexture::Multisampled { resolve, .. } => resolve,
+        }
+    }
+
+    pub fn render_pass_attachments(
+        &self,
+    ) -> (
+        wgpu::RenderPassColorAttachment,
+        wgpu::RenderPassDepthStencilAttachment,
+    ) {
+        let (color_view, depth_view, resolve_view) = match &self.texture {
+            RenderTargetTexture::Simple {
+                color_view,
+                depth_view,
+                ..
+            } => (color_view, depth_view, None),
+            RenderTargetTexture::Multisampled {
+                color_view,
+                depth_view,
+                resolve_view,
+                ..
+            } => (color_view, depth_view, Some(resolve_view)),
+        };
+
+        let color_attachment = wgpu::RenderPassColorAttachment {
+            view: color_view,
+            resolve_target: resolve_view,
+            ops: wgpu::Operations {
+                load: wgpu::LoadOp::Clear(Color::GRUE.to_wgpu()),
+                store: true,
+            },
+        };
+
+        let depth_stencil_attachment = wgpu::RenderPassDepthStencilAttachment {
+            view: depth_view,
+            depth_ops: Some(wgpu::Operations {
+                load: wgpu::LoadOp::Clear(1.0),
+                store: true,
+            }),
+            stencil_ops: None,
+        };
+
+        (color_attachment, depth_stencil_attachment)
+    }
+}
+
+fn create_render_target(
+    size: UVec2,
+    sample_count: u32,
+    color_format: wgpu::TextureFormat,
+    depth_format: wgpu::TextureFormat,
+    backend: &mut Backend,
+) -> RenderTarget {
+    let texture_size = wgpu::Extent3d {
+        width: size.x,
+        height: size.y,
+        depth_or_array_layers: 1,
+    };
+
+    let color = backend.device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("color texture"),
+        size: texture_size,
+        mip_level_count: 1,
+        sample_count,
+        dimension: wgpu::TextureDimension::D2,
+        format: color_format,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
+    });
+    let depth = backend.device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("depth texture"),
+        size: texture_size,
+        mip_level_count: 1,
+        sample_count,
+        dimension: wgpu::TextureDimension::D2,
+        format: depth_format,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
+    });
+
+    let is_multisampled = sample_count > 1;
+    let texture = if is_multisampled {
+        let resolve = backend.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("resolve texture"),
+            size: texture_size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: color_format,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+
+        RenderTargetTexture::Multisampled {
+            color_view: color.create_view(&Default::default()),
+            color,
+            depth_view: depth.create_view(&Default::default()),
+            depth,
+            resolve_view: resolve.create_view(&Default::default()),
+            resolve,
+        }
+    } else {
+        RenderTargetTexture::Simple {
+            color_view: color.create_view(&Default::default()),
+            color,
+            depth_view: depth.create_view(&Default::default()),
+            depth,
+        }
+    };
+
+    RenderTarget {
+        size,
+        color_format,
+        depth_format,
+        sample_count,
+        texture,
+    }
 }

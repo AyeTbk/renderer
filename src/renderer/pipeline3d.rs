@@ -1,26 +1,28 @@
-use glam::UVec2;
-
-use crate::{renderer::step::build_render_meshes_step, Color};
+use crate::Vertex;
 
 use super::{
-    backend::{Backend, RenderMeshCommand},
-    step::Step,
+    backend::Backend,
+    visual_server::{RenderTarget, RenderTargetInfo},
 };
 
-pub struct Pipeline {
+pub struct Pipeline3d {
     steps: Vec<Step>,
-    data: PipelineData,
+    data: Pipeline3dData,
 }
 
-pub struct PipelineData {
-    pub render_target: RenderTarget,
+pub struct Pipeline3dData {
+    pub render_target_info: RenderTargetInfo,
     pub pipeline_layouts: PipelineLayouts,
     pub bind_group_layouts: BindGroupLayouts,
     pub shaders: Shaders,
 }
 
-impl Pipeline {
-    pub fn new(backend: &mut Backend) -> Self {
+pub struct Step {
+    pub pipeline: wgpu::RenderPipeline,
+}
+
+impl Pipeline3d {
+    pub fn new(render_target_info: RenderTargetInfo, backend: &mut Backend) -> Self {
         let shaders = Shaders {
             render_meshes: backend
                 .device
@@ -110,16 +112,8 @@ impl Pipeline {
                 }),
         };
 
-        let render_target = Self::create_render_target(
-            (1, 1).into(),
-            1,
-            wgpu::TextureFormat::Rgba8UnormSrgb,
-            Backend::DEPTH_TEXTURE_FORMAT,
-            backend,
-        );
-
-        let data = PipelineData {
-            render_target,
+        let data = Pipeline3dData {
+            render_target_info,
             pipeline_layouts,
             bind_group_layouts,
             shaders,
@@ -129,30 +123,20 @@ impl Pipeline {
         Self { steps, data }
     }
 
-    pub fn set_render_target_size(&mut self, size: UVec2, backend: &mut Backend) {
-        self.data.render_target.size = size;
-
-        self.recreate_render_target(backend);
-    }
-
-    pub fn set_render_target_sample_count(&mut self, sample_count: u32, backend: &mut Backend) {
-        self.data.render_target.sample_count = sample_count;
-
-        self.recreate_render_target(backend);
+    pub fn update_render_target_info(
+        &mut self,
+        render_target_info: RenderTargetInfo,
+        backend: &mut Backend,
+    ) {
+        self.data.render_target_info = render_target_info;
         self.rebuild_steps(backend);
     }
 
-    pub fn render_target_texture(&self) -> &wgpu::Texture {
-        match &self.data.render_target.texture {
-            RenderTargetTexture::Simple { color, .. } => color,
-            RenderTargetTexture::Multisampled { resolve, .. } => resolve,
-        }
-    }
-
-    pub fn render<'a>(
+    pub fn render(
         &self,
         scene_uniform_buffer: &wgpu::Buffer,
         render_commands: &[RenderMeshCommand],
+        render_target: &RenderTarget,
         backend: &mut Backend,
     ) {
         let scene_bind_group = backend
@@ -166,40 +150,7 @@ impl Pipeline {
                 }],
             });
 
-        let (color_view, depth_view, resolve_view) = match &self.data.render_target.texture {
-            RenderTargetTexture::Simple { color, depth } => (
-                color.create_view(&Default::default()),
-                depth.create_view(&Default::default()),
-                None,
-            ),
-            RenderTargetTexture::Multisampled {
-                color,
-                depth,
-                resolve,
-            } => (
-                color.create_view(&Default::default()),
-                depth.create_view(&Default::default()),
-                Some(resolve.create_view(&Default::default())),
-            ),
-        };
-
-        let render_pass_color_attachment = wgpu::RenderPassColorAttachment {
-            view: &color_view,
-            resolve_target: resolve_view.as_ref(),
-            ops: wgpu::Operations {
-                load: wgpu::LoadOp::Clear(Color::GRUE.to_wgpu()),
-                store: true,
-            },
-        };
-
-        let render_pass_depth_stencil_attachment = wgpu::RenderPassDepthStencilAttachment {
-            view: &depth_view,
-            depth_ops: Some(wgpu::Operations {
-                load: wgpu::LoadOp::Clear(1.0),
-                store: true,
-            }),
-            stencil_ops: None,
-        };
+        let (color_attachment, depth_stencil_attachment) = render_target.render_pass_attachments();
 
         let mut encoder = backend
             .device
@@ -210,8 +161,8 @@ impl Pipeline {
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("render pass"),
-                color_attachments: &[Some(render_pass_color_attachment)],
-                depth_stencil_attachment: Some(render_pass_depth_stencil_attachment),
+                color_attachments: &[Some(color_attachment)],
+                depth_stencil_attachment: Some(depth_stencil_attachment),
             });
 
             for step in &self.steps {
@@ -243,105 +194,9 @@ impl Pipeline {
         self.steps = Self::build_steps(&self.data, backend);
     }
 
-    fn build_steps(data: &PipelineData, backend: &mut Backend) -> Vec<Step> {
+    fn build_steps(data: &Pipeline3dData, backend: &mut Backend) -> Vec<Step> {
         vec![build_render_meshes_step(data, backend)]
     }
-
-    fn recreate_render_target(&mut self, backend: &mut Backend) {
-        self.data.render_target = Self::create_render_target(
-            self.data.render_target.size,
-            self.data.render_target.sample_count,
-            self.data.render_target.color_format,
-            self.data.render_target.depth_format,
-            backend,
-        );
-    }
-
-    fn create_render_target(
-        size: UVec2,
-        sample_count: u32,
-        color_format: wgpu::TextureFormat,
-        depth_format: wgpu::TextureFormat,
-        backend: &mut Backend,
-    ) -> RenderTarget {
-        let texture_size = wgpu::Extent3d {
-            width: size.x,
-            height: size.y,
-            depth_or_array_layers: 1,
-        };
-
-        let color = backend.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("color texture"),
-            size: texture_size,
-            mip_level_count: 1,
-            sample_count,
-            dimension: wgpu::TextureDimension::D2,
-            format: color_format,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        });
-        let depth = backend.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("depth texture"),
-            size: texture_size,
-            mip_level_count: 1,
-            sample_count,
-            dimension: wgpu::TextureDimension::D2,
-            format: depth_format,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
-            view_formats: &[],
-        });
-
-        let is_multisampled = sample_count > 1;
-        let texture = if is_multisampled {
-            let resolve = backend.device.create_texture(&wgpu::TextureDescriptor {
-                label: Some("resolve texture"),
-                size: texture_size,
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: color_format,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
-                    | wgpu::TextureUsages::TEXTURE_BINDING,
-                view_formats: &[],
-            });
-
-            RenderTargetTexture::Multisampled {
-                color,
-                depth,
-                resolve,
-            }
-        } else {
-            RenderTargetTexture::Simple { color, depth }
-        };
-
-        RenderTarget {
-            size,
-            color_format,
-            depth_format,
-            sample_count,
-            texture,
-        }
-    }
-}
-
-pub struct RenderTarget {
-    pub size: UVec2,
-    pub color_format: wgpu::TextureFormat,
-    pub depth_format: wgpu::TextureFormat,
-    pub sample_count: u32,
-    pub texture: RenderTargetTexture,
-}
-
-pub enum RenderTargetTexture {
-    Simple {
-        color: wgpu::Texture,
-        depth: wgpu::Texture,
-    },
-    Multisampled {
-        color: wgpu::Texture,
-        depth: wgpu::Texture,
-        resolve: wgpu::Texture,
-    },
 }
 
 pub struct PipelineLayouts {
@@ -356,4 +211,57 @@ pub struct BindGroupLayouts {
 
 pub struct Shaders {
     pub render_meshes: wgpu::ShaderModule,
+}
+
+pub struct RenderMeshCommand<'a> {
+    pub material_bind_group: &'a wgpu::BindGroup,
+    pub model_bind_group: &'a wgpu::BindGroup,
+    pub vertex_buffer: &'a wgpu::Buffer,
+    pub index_buffer: &'a wgpu::Buffer,
+    pub index_count: u32,
+}
+
+fn build_render_meshes_step(pipeline_data: &Pipeline3dData, backend: &mut Backend) -> Step {
+    Step {
+        pipeline: backend
+            .device
+            .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("render meshes pipeline"),
+                layout: Some(&pipeline_data.pipeline_layouts.render_meshes),
+                vertex: wgpu::VertexState {
+                    module: &pipeline_data.shaders.render_meshes,
+                    entry_point: "vs_main",
+                    buffers: &[Vertex::buffer_layout()],
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &pipeline_data.shaders.render_meshes,
+                    entry_point: "fs_main",
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: pipeline_data.render_target_info.color_format,
+                        blend: Some(wgpu::BlendState::REPLACE),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    strip_index_format: None,
+                    front_face: wgpu::FrontFace::Ccw,
+                    cull_mode: Some(wgpu::Face::Back),
+                    ..Default::default()
+                },
+                depth_stencil: Some(wgpu::DepthStencilState {
+                    format: pipeline_data.render_target_info.depth_format,
+                    depth_write_enabled: true,
+                    depth_compare: wgpu::CompareFunction::Less,
+                    stencil: wgpu::StencilState::default(),
+                    bias: wgpu::DepthBiasState::default(),
+                }),
+                multisample: wgpu::MultisampleState {
+                    count: pipeline_data.render_target_info.sample_count,
+                    mask: !0,
+                    alpha_to_coverage_enabled: false,
+                },
+                multiview: None,
+            }),
+    }
 }

@@ -435,11 +435,3 @@ impl<T> Uniform for T where T: Clone + Copy + bytemuck::Pod + bytemuck::Zeroable
 pub struct ShowTextureUniform {
     render_size: [u32; 2],
 }
-
-pub struct RenderMeshCommand<'a> {
-    pub material_bind_group: &'a wgpu::BindGroup,
-    pub model_bind_group: &'a wgpu::BindGroup,
-    pub vertex_buffer: &'a wgpu::Buffer,
-    pub index_buffer: &'a wgpu::Buffer,
-    pub index_count: u32,
-}

@@ -3,6 +3,4 @@ pub use self::visual_server::VisualServer;
 
 pub mod backend;
 
-pub mod step;
-
-pub mod pipeline;
+pub mod pipeline3d;
