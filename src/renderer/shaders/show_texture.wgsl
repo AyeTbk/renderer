@@ -10,13 +10,13 @@ fn vs_main(
 ) -> VertexOutput {
     var out: VertexOutput;
 
-    // Expects Topology::TriangleStrips, Clockwise winding and 4 vertices
-    let x = f32(in_vertex_index & 1u) * 2.0 - 1.0;
-    let y = f32(1 - i32(in_vertex_index) / 2) * 2.0 - 1.0;
+    // Expects Topology::TriangleStrips, Ccw winding and 4 vertices
+    let x = f32(in_vertex_index / 2u) * 2.0 - 1.0;
+    let y = f32(1u - (in_vertex_index & 1u)) * 2.0 - 1.0;
     out.clip_position = vec4f(x, y, 0.0, 1.0);
 
-    out.uv.x = f32(in_vertex_index & 1u);
-    out.uv.y = f32(in_vertex_index / 2u);
+    out.uv.x = f32(in_vertex_index / 2u);
+    out.uv.y = f32(in_vertex_index & 1u);
 
     return out;
 }

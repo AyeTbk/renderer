@@ -1,5 +1,6 @@
 use std::collections::{hash_map::Entry, HashMap};
 
+use asset_image::Image;
 use glam::{Affine3A, Mat4, UVec2, Vec3, Vec3Swizzles, Vec4};
 
 use crate::{
@@ -10,22 +11,34 @@ use crate::{
 
 use super::{
     backend::Backend,
+    pipeline2d::Pipeline2d,
     pipeline3d::{Pipeline3d, RenderMeshCommand},
 };
 
 pub struct VisualServer {
     backend: Backend,
     render_size_factor: f32,
+    //
+    viewport_uniform_buffer: wgpu::Buffer,
     render_scene: RenderScene,
     render_scene_data: RenderSceneData,
     white_texture: wgpu::Texture,
+    font_texture: wgpu::Texture,
+    //
     render_target: RenderTarget,
     pipeline3d: Pipeline3d,
+    pipeline2d: Pipeline2d,
 }
 
 impl VisualServer {
     pub fn new(window: &winit::window::Window) -> Self {
         let mut backend = Backend::new(window);
+
+        let viewport_uniform = ViewportUniform {
+            size: backend.render_size().to_array(),
+        };
+        let viewport_uniform_buffer = backend.create_uniform_buffer(viewport_uniform);
+
         let scene_uniform = SceneUniform {
             projection_view: Camera::default().projection_matrix().to_cols_array(),
             view_pos: Vec4::default().to_array(),
@@ -42,6 +55,7 @@ impl VisualServer {
         };
 
         let white_texture = backend.create_color_texture(1, 1, &[255, 255, 255, 255], 1);
+        let font_texture = backend.create_color_texture(1, 1, &[255, 0, 255, 255], 1);
 
         let render_target = create_render_target(
             backend.render_size(),
@@ -50,8 +64,16 @@ impl VisualServer {
             Backend::DEPTH_TEXTURE_FORMAT,
             &mut backend,
         );
-        let pipeline = Pipeline3d::new(
+
+        let pipeline3d = Pipeline3d::new(
             &render_scene_data.uniform_buffer,
+            render_target.info(),
+            &mut backend,
+        );
+
+        let pipeline2d = Pipeline2d::new(
+            &viewport_uniform_buffer,
+            &font_texture,
             render_target.info(),
             &mut backend,
         );
@@ -59,11 +81,16 @@ impl VisualServer {
         Self {
             backend,
             render_size_factor: 1.0,
+            //
+            viewport_uniform_buffer,
             render_scene: Default::default(),
             render_scene_data,
             white_texture,
+            font_texture,
+            //
             render_target,
-            pipeline3d: pipeline,
+            pipeline3d,
+            pipeline2d,
         }
     }
 
@@ -87,6 +114,18 @@ impl VisualServer {
         self.render_target.sample_count = sample_count;
 
         self.recreate_render_target();
+    }
+
+    pub fn set_font_image(&mut self, image: &Image) {
+        self.font_texture = self.backend.create_color_texture_linear(
+            image.width(),
+            image.height(),
+            image.data(),
+            1,
+        );
+
+        self.pipeline2d
+            .update_font_texture(&self.font_texture, &mut self.backend);
     }
 
     pub fn set_camera(&mut self, transform: &Affine3A, camera: &Camera) {
@@ -127,6 +166,8 @@ impl VisualServer {
 
         self.pipeline3d
             .render(&mut encoder, &render_mesh_commands, &self.render_target);
+
+        self.pipeline2d.render(&mut encoder, &self.render_target);
 
         self.backend.queue.submit(Some(encoder.finish()));
 
@@ -170,7 +211,15 @@ impl VisualServer {
             &mut self.backend,
         );
 
+        let viewport_uniform = ViewportUniform {
+            size: self.backend.render_size().to_array(),
+        };
+        self.backend
+            .update_uniform_buffer(&self.viewport_uniform_buffer, viewport_uniform);
+
         self.pipeline3d
+            .update_render_target_info(self.render_target.info(), &mut self.backend);
+        self.pipeline2d
             .update_render_target_info(self.render_target.info(), &mut self.backend);
     }
 
@@ -289,6 +338,12 @@ impl VisualServer {
             e.insert(render_material);
         }
     }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct ViewportUniform {
+    size: [u32; 2],
 }
 
 struct RenderSceneData {

@@ -5,7 +5,7 @@ use wgpu::{
     BindGroupDescriptor,
 };
 
-use crate::{Color, Vertex};
+use crate::Color;
 
 pub struct Backend {
     render_size: UVec2,
@@ -31,7 +31,10 @@ impl Backend {
 
         let render_size: UVec2 = (window.inner_size().width, window.inner_size().height).into();
 
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::default());
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: wgpu::util::backend_bits_from_env().unwrap_or_else(wgpu::Backends::all),
+            ..Default::default()
+        });
         // # Safety
         // The surface must not outlive the window that created it.
         let surface = unsafe { instance.create_surface(window) }.unwrap();
@@ -44,6 +47,12 @@ impl Backend {
             })
             .block_on()
             .unwrap();
+
+        println!(
+            "Using adapter: [{:?}] {}",
+            adapter.get_info().backend,
+            adapter.get_info().name
+        );
 
         // A device represents a logical graphics/compute device.
         // A queue is a handle to a command queue for a device, to which commands can be submitted.
@@ -192,7 +201,7 @@ impl Backend {
                 primitive: wgpu::PrimitiveState {
                     topology: wgpu::PrimitiveTopology::TriangleStrip,
                     strip_index_format: None,
-                    front_face: wgpu::FrontFace::Cw,
+                    front_face: wgpu::FrontFace::Ccw,
                     cull_mode: Some(wgpu::Face::Back),
                     ..Default::default()
                 },
@@ -243,10 +252,13 @@ impl Backend {
         );
     }
 
-    pub fn create_vertex_buffer(&mut self, vertices: &[Vertex]) -> wgpu::Buffer {
+    pub fn create_vertex_buffer<T>(&mut self, vertices: &[T]) -> wgpu::Buffer
+    where
+        T: Vertexish,
+    {
         self.device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("vertex buffer"),
+                label: Some("vertexish buffer"),
                 contents: bytemuck::cast_slice(vertices),
                 usage: wgpu::BufferUsages::VERTEX,
             })
@@ -333,6 +345,33 @@ impl Backend {
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
                 format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            },
+            data,
+        )
+    }
+
+    pub fn create_color_texture_linear(
+        &mut self,
+        width: u32,
+        height: u32,
+        data: &[u8],
+        mip_level_count: u32,
+    ) -> wgpu::Texture {
+        self.device.create_texture_with_data(
+            &self.queue,
+            &wgpu::TextureDescriptor {
+                label: Some("color texture"),
+                size: wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8Unorm,
                 usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
                 view_formats: &[],
             },
@@ -429,6 +468,9 @@ impl Backend {
 
 pub trait Uniform: Clone + Copy + bytemuck::Pod + bytemuck::Zeroable {}
 impl<T> Uniform for T where T: Clone + Copy + bytemuck::Pod + bytemuck::Zeroable {}
+
+pub trait Vertexish: Clone + Copy + bytemuck::Pod + bytemuck::Zeroable {}
+impl<T> Vertexish for T where T: Clone + Copy + bytemuck::Pod + bytemuck::Zeroable {}
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]

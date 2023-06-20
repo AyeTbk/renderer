@@ -42,4 +42,9 @@ impl AssetServer {
     pub fn load_scene(&mut self, path: &str) -> Result<Handle<Scene>, String> {
         gltf::GtlfLoader::new(path, self)?.load()
     }
+
+    pub fn load_image(&mut self, path: &str) -> Result<Handle<Image>, String> {
+        let image = Image::load_from_file(path)?;
+        Ok(self.images.allocate(image))
+    }
 }

@@ -14,18 +14,25 @@ fn main() {
     let mut cursor_grabbed = false;
 
     let mut eng = Engine::new(&window);
+
+    // Load font
+    let font_handle = eng.asset_server.load_image("data/sdffont.png").unwrap();
+    let font_image = eng.asset_server.get_image(font_handle);
+    eng.visual_server.set_font_image(font_image);
+
+    // Load scene
     let scene = eng
         .asset_server
-        .load_scene("data/sponza/Sponza.gltf")
-        // .load_scene("data/flight/FlightHelmet.gltf")
-        // .load_scene("data/suzanne/suzanne.gltf")
-        // .load_scene("data/tri.glb")
-        // .load_scene("data/uvs.glb")
-        // .load_scene("data/checker-world.glb")
+        .load_scene("data/scenes/sponza/Sponza.gltf")
+        // .load_scene("data/scenes/flight/FlightHelmet.gltf")
+        // .load_scene("data/scenes/suzanne/suzanne.gltf")
+        // .load_scene("data/scenes/tri.glb")
+        // .load_scene("data/scenes/uvs.glb")
+        // .load_scene("data/scenes/checker-world.glb")
         .unwrap();
     eng.scene = eng.asset_server.get_scene(scene).clone();
 
-    // First person camera
+    // Setup first person camera
     eng.scene.add_allocate_child(
         eng.scene.root,
         Node::new_camera(Default::default())
