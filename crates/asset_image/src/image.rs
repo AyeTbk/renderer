@@ -8,7 +8,7 @@ pub struct Image {
 }
 
 impl Image {
-    pub fn load_from_file(path: impl AsRef<Path>) -> Result<Self, String> {
+    pub fn load_from_path(path: impl AsRef<Path>) -> Result<Self, String> {
         let dyn_image = image::open(path).map_err(|e| format!("{:?}", e))?;
         Ok(Self {
             inner: dyn_image.into_rgba8(),
@@ -24,9 +24,12 @@ impl Image {
         })
     }
 
-    pub fn make_mips(&mut self, max_level: Option<usize>) -> Result<(), String> {
-        assert!(self.width().is_power_of_two());
-        assert!(self.height() == self.width());
+    pub fn make_mips(&mut self) -> Result<(), String> {
+        if !self.width().is_power_of_two() || !(self.height() == self.width()) {
+            return Err(format!("can't generate mipmaps on images that aren't square and that have non power of two dimensions: dimensions {}x{}", self.width(), self.height()));
+        }
+
+        let max_level: Option<usize> = None;
 
         fn mip_size_from_level(level0_size: usize, level: usize) -> usize {
             level0_size >> level

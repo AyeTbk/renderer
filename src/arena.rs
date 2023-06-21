@@ -1,18 +1,20 @@
-use std::marker::PhantomData;
+use std::{any::TypeId, marker::PhantomData};
 
 #[derive(Debug, Clone)]
-pub struct Arena<T> {
+pub struct Arena<T, H = Handle<T>> {
     elements: Vec<T>,
+    _ghost: PhantomData<*const H>,
 }
 
-impl<T> Arena<T> {
+impl<T, U> Arena<T, Handle<U>> {
     pub fn new() -> Self {
         Self {
             elements: Vec::default(),
+            _ghost: PhantomData,
         }
     }
 
-    pub fn allocate(&mut self, t: T) -> Handle<T> {
+    pub fn allocate(&mut self, t: T) -> Handle<U> {
         let id = self.elements.len() as u32;
         self.elements.push(t);
         Handle {
@@ -21,22 +23,22 @@ impl<T> Arena<T> {
         }
     }
 
-    pub fn get(&self, handle: Handle<T>) -> &T {
+    pub fn get(&self, handle: Handle<U>) -> &T {
         self.elements.get(handle.id as usize).expect("bad handle")
     }
 
-    pub fn get_mut(&mut self, handle: Handle<T>) -> &mut T {
+    pub fn get_mut(&mut self, handle: Handle<U>) -> &mut T {
         self.elements
             .get_mut(handle.id as usize)
             .expect("bad handle")
     }
 
-    pub fn replace(&mut self, handle: Handle<T>, t: T) -> T {
+    pub fn replace(&mut self, handle: Handle<U>, t: T) -> T {
         let dst = self.get_mut(handle);
         std::mem::replace(dst, t)
     }
 
-    pub fn elements(&self) -> impl Iterator<Item = (Handle<T>, &T)> {
+    pub fn elements(&self) -> impl Iterator<Item = (Handle<U>, &T)> {
         self.elements
             .iter()
             .enumerate()
@@ -44,7 +46,7 @@ impl<T> Arena<T> {
     }
 }
 
-impl<T> Default for Arena<T> {
+impl<T, U> Default for Arena<T, Handle<U>> {
     fn default() -> Self {
         Self::new()
     }
@@ -88,5 +90,34 @@ impl<T> Handle<T> {
             id,
             _ghost: PhantomData,
         }
+    }
+}
+
+impl<T: 'static> Handle<T> {
+    pub fn to_type_erased(self) -> TypeErasedHandle {
+        TypeErasedHandle {
+            id: self.id,
+            erased_type_id: TypeId::of::<T>(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct TypeErasedHandle {
+    id: u32,
+    erased_type_id: TypeId,
+}
+
+impl TypeErasedHandle {
+    pub fn downcast<T: 'static>(self) -> Result<Handle<T>, Self> {
+        if self.erased_type_id == TypeId::of::<T>() {
+            Ok(Handle::new(self.id))
+        } else {
+            Err(self)
+        }
+    }
+
+    pub fn erased_type_id(&self) -> TypeId {
+        self.erased_type_id
     }
 }

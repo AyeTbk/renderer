@@ -7,6 +7,7 @@ use glam::{Affine3A, Mat4, UVec2, Vec3, Vec3Swizzles, Vec4};
 // better compile times). This goes for AssetServer too, I guess.
 use crate::{
     arena::Handle,
+    asset_server::AssetChanges,
     image::Image,
     scene::{NodeData, NodeId},
     AssetServer, Camera, Color, Material, Mesh, Scene,
@@ -58,7 +59,7 @@ impl VisualServer {
         };
 
         let white_texture = backend.create_color_texture(1, 1, &[255, 255, 255, 255], 1);
-        let font_texture = backend.create_color_texture(1, 1, &[255, 0, 255, 255], 1);
+        let font_texture = backend.create_color_texture(1, 1, &[255, 255, 0, 255], 1);
 
         let render_target = create_render_target(
             backend.render_size(),
@@ -201,6 +202,28 @@ impl VisualServer {
         self.render_scene = Default::default();
     }
 
+    pub fn notify_asset_changes(&mut self, changes: &AssetChanges, asset_server: &mut AssetServer) {
+        for &changed_image_handle in &changes.images {
+            let mut textures_to_update = Vec::new();
+            for &texture_handle in self.render_scene.textures.keys() {
+                textures_to_update.push(texture_handle);
+            }
+            for texture_handle in textures_to_update {
+                self.update_texture(texture_handle, asset_server);
+            }
+
+            let mut materials_to_update = Vec::new();
+            for (&material_handle, material) in self.render_scene.materials.iter() {
+                if material.used_textures.contains(&changed_image_handle) {
+                    materials_to_update.push(material_handle);
+                }
+            }
+            for material_handle in materials_to_update {
+                self.update_render_material_data(material_handle, asset_server);
+            }
+        }
+    }
+
     fn recreate_render_target(&mut self) {
         let scaled_render_size =
             (self.render_size().as_vec2() * self.render_size_factor).as_uvec2();
@@ -303,43 +326,71 @@ impl VisualServer {
     }
 
     fn register_material(&mut self, handle: Handle<Material>, asset_server: &AssetServer) {
-        if let Entry::Vacant(e) = self.render_scene.materials.entry(handle) {
-            let material = asset_server.get_material(handle);
-            let material_uniform = MaterialUniform {
-                base_color: material.base_color.into(),
-            };
-
-            let uniform_buffer = self.backend.create_uniform_buffer(material_uniform);
-            let base_color_texture = if let Some(image) = material.base_color_image {
-                let image = asset_server.get_image(image);
-                let texture = self.backend.create_color_texture(
-                    image.width(),
-                    image.height(),
-                    image.data(),
-                    image.mip_level_count(),
-                );
-                Some(texture)
-            } else {
-                None
-            };
-            let sampler = self.backend.create_sampler();
-
-            let base_color_texture_ref = base_color_texture.as_ref().unwrap_or(&self.white_texture);
-
-            let bind_group = self.backend.create_material_bind_group(
-                &uniform_buffer,
-                base_color_texture_ref,
-                &sampler,
-            );
-            let render_material = RenderMaterial {
-                bind_group,
-                uniform_buffer,
-                base_color_texture,
-                sampler,
-            };
-
-            e.insert(render_material);
+        if self.render_scene.materials.contains_key(&handle) {
+            return;
         }
+        let material = asset_server.get_material(handle);
+
+        if let Some(image) = material.base_color_image {
+            self.register_texture(image, asset_server);
+        }
+
+        self.update_render_material_data(handle, asset_server);
+    }
+
+    fn update_render_material_data(
+        &mut self,
+        handle: Handle<Material>,
+        asset_server: &AssetServer,
+    ) {
+        let material = asset_server.get_material(handle);
+        let material_uniform = MaterialUniform {
+            base_color: material.base_color.into(),
+        };
+
+        let uniform_buffer = self.backend.create_uniform_buffer(material_uniform);
+        let base_color_texture = if let Some(image) = material.base_color_image {
+            let texture = self.render_scene.textures.get(&image).unwrap();
+            Some(texture)
+        } else {
+            None
+        };
+        let sampler = self.backend.create_sampler();
+
+        let base_color_texture_ref = base_color_texture.unwrap_or(&self.white_texture);
+
+        let bind_group = self.backend.create_material_bind_group(
+            &uniform_buffer,
+            base_color_texture_ref,
+            &sampler,
+        );
+        let render_material = RenderMaterial {
+            bind_group,
+            uniform_buffer,
+            used_textures: material.base_color_image.into_iter().collect(),
+            sampler,
+        };
+
+        self.render_scene.materials.insert(handle, render_material);
+    }
+
+    fn register_texture(&mut self, handle: Handle<Image>, asset_server: &AssetServer) {
+        if self.render_scene.textures.contains_key(&handle) {
+            return;
+        }
+
+        self.update_texture(handle, asset_server);
+    }
+
+    fn update_texture(&mut self, handle: Handle<Image>, asset_server: &AssetServer) {
+        let image = asset_server.get_image(handle);
+        let texture = self.backend.create_color_texture(
+            image.width(),
+            image.height(),
+            image.data(),
+            image.mip_level_count(),
+        );
+        self.render_scene.textures.insert(handle, texture);
     }
 }
 
@@ -368,6 +419,7 @@ struct SceneUniform {
 struct RenderScene {
     meshes: HashMap<Handle<Mesh>, RenderMesh>,
     materials: HashMap<Handle<Material>, RenderMaterial>,
+    textures: HashMap<Handle<Image>, wgpu::Texture>,
     mesh_instances: HashMap<NodeId, RenderMeshInstance>,
 }
 
@@ -400,7 +452,7 @@ struct RenderMaterial {
     #[allow(unused)]
     uniform_buffer: wgpu::Buffer,
     #[allow(unused)]
-    base_color_texture: Option<wgpu::Texture>,
+    used_textures: Vec<Handle<Image>>,
     #[allow(unused)]
     sampler: wgpu::Sampler,
 }

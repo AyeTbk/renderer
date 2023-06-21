@@ -31,9 +31,18 @@ impl Engine {
     }
 
     pub fn update(&mut self) {
+        self.notify_asset_changes();
+
         self.update_input();
 
         self.update_node_recursive(self.scene.root, Affine3A::IDENTITY);
+    }
+
+    fn notify_asset_changes(&mut self) {
+        let changes = self.asset_server.take_asset_changes();
+
+        self.visual_server
+            .notify_asset_changes(&changes, &mut self.asset_server);
     }
 
     fn update_input(&mut self) {

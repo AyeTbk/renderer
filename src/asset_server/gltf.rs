@@ -66,33 +66,34 @@ impl<'a> Write<'a> {
         // Preallocate textures/images
         for gltf_texture in read.gltf.textures() {
             let id = gltf_texture.index();
-            let mut image = match gltf_texture.source().source() {
+            let (image, maybe_path) = match gltf_texture.source().source() {
                 gltf::image::Source::Uri { uri, .. } => {
                     let full_path = Self::make_full_path(uri, read);
-                    Image::load_from_file(full_path)?
+                    (Image::load_from_path(&full_path)?, Some(full_path))
                 }
                 gltf::image::Source::View { view, .. } => {
                     if let Source::Uri(path) = view.buffer().source() {
                         self.load_external_bin(path, read)?;
                     }
                     let bytes = self.get_bytes_from_view(&view, read)?;
-                    Image::load_from_memory(bytes)?
+                    (Image::load_from_memory(bytes)?, None)
                 }
             };
-            image.make_mips(None)?;
-            let handle = self.asset_server.images.allocate(image);
+
+            let handle = self.asset_server.add_image(image);
+            if let Some(path) = maybe_path {
+                self.asset_server.set_asset_path(handle, path);
+            }
             self.images_ids_map.insert(id, handle);
         }
 
         // Preallocate materials
-        self.material_ids_map.insert(
-            None,
-            self.asset_server.materials.allocate(Material::default()),
-        );
+        self.material_ids_map
+            .insert(None, self.asset_server.add_material(Material::default()));
         for gltf_material in read.gltf.materials() {
             let id = gltf_material.index();
             let pbr = gltf_material.pbr_metallic_roughness();
-            let handle = self.asset_server.materials.allocate(Material {
+            let handle = self.asset_server.add_material(Material {
                 base_color: pbr.base_color_factor().into(),
                 base_color_image: pbr.base_color_texture().and_then(|info| {
                     let id = info.texture().index();
@@ -106,7 +107,7 @@ impl<'a> Write<'a> {
         for gltf_mesh in read.gltf.meshes() {
             let id = gltf_mesh.index();
             let mesh = self.gltf_mesh_to_mesh(&gltf_mesh, read)?;
-            let handle = self.asset_server.meshes.allocate(mesh);
+            let handle = self.asset_server.add_mesh(mesh);
             self.meshes_ids_map.insert(id, handle);
         }
 
@@ -118,7 +119,7 @@ impl<'a> Write<'a> {
                 self.load_node_recursive(gltf_node, scene.root, &mut scene);
             }
 
-            let scene_handle = self.asset_server.scenes.allocate(scene);
+            let scene_handle = self.asset_server.add_scene(scene);
             return Ok(scene_handle);
         }
 

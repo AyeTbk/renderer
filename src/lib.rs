@@ -12,6 +12,9 @@ pub use asset_server::AssetServer;
 mod color;
 pub use color::Color;
 
+mod timestamp;
+pub use timestamp::Timestamp;
+
 mod material;
 pub use material::Material;
 
