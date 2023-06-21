@@ -12,9 +12,6 @@ pub use asset_server::AssetServer;
 mod color;
 pub use color::Color;
 
-mod vertex;
-pub use vertex::Vertex;
-
 mod material;
 pub use material::Material;
 

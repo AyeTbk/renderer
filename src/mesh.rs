@@ -1,4 +1,4 @@
-use crate::{arena::Handle, Material, Vertex};
+use crate::{arena::Handle, renderer::Vertex, Material};
 
 pub struct Mesh {
     pub submeshes: Vec<Submesh>,

@@ -1,10 +1,13 @@
 use std::collections::{hash_map::Entry, HashMap};
 
-use asset_image::Image;
 use glam::{Affine3A, Mat4, UVec2, Vec3, Vec3Swizzles, Vec4};
 
+// TODO Find ways to reduce coupling between the renderer and the rest of the engine, to
+// eventually make it easy to extract in a separate crate (mostly in hopes of getting
+// better compile times). This goes for AssetServer too, I guess.
 use crate::{
     arena::Handle,
+    image::Image,
     scene::{NodeData, NodeId},
     AssetServer, Camera, Color, Material, Mesh, Scene,
 };

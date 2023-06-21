@@ -1,10 +1,9 @@
 use wgpu::CommandEncoder;
 
-use crate::Vertex;
-
 use super::{
     backend::Backend,
     visual_server::{RenderTarget, RenderTargetInfo},
+    Vertex,
 };
 
 pub struct Pipeline3d {

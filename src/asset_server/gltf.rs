@@ -11,7 +11,8 @@ use gltf::{
 };
 
 use crate::{
-    arena::Handle, scene::NodeId, AssetServer, Image, Material, Mesh, Node, Scene, Submesh, Vertex,
+    arena::Handle, renderer::Vertex, scene::NodeId, AssetServer, Image, Material, Mesh, Node,
+    Scene, Submesh,
 };
 
 pub struct GtlfLoader<'a> {

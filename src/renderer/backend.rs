@@ -5,8 +5,6 @@ use wgpu::{
     BindGroupDescriptor,
 };
 
-use crate::Color;
-
 pub struct Backend {
     render_size: UVec2,
     //
@@ -446,7 +444,7 @@ impl Backend {
                     view: &surface_view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(Color::RED.to_wgpu()),
+                        load: wgpu::LoadOp::Clear(wgpu::Color::RED),
                         store: true,
                     },
                 })],

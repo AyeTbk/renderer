@@ -5,3 +5,6 @@ pub mod backend;
 
 pub mod pipeline2d;
 pub mod pipeline3d;
+
+mod vertex;
+pub use self::vertex::Vertex;
