@@ -67,32 +67,29 @@ fn vs_main(
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
-    // let dist = 1.0 - abs(sdf.r - 0.5) * 2.0;
-    // let alpha = smoothstep(0.35, 0.4, dist);
+    return fs_signed_distance_field(in);
+}
 
-    let fill_smoothing_center = 0.1;
-    let fill_smooth = 0.1;
-    let fill_color = vec3f(0.8);
-    let outline_smoothing_center = 0.05;
-    let outline_smooth = 0.05;
+fn fs_signed_distance_field(in: VertexOutput) -> vec4f {
+    let fill_color = vec3f(0.9);
     let outline_color = vec3f(0.0);
+    
+    // TODO: potential improvement: have these values automatically calculated from data about the sdffont
+    // instead of hand picking them.
+    let fill_smoothcenter = 0.3;
+    let outline_smoothcenter = 0.7;
+    let smoothing = 0.2;
 
-    let sdf = textureSample(font_atlas, tex_sampler, in.uv);
-    let dist_in = abs(clamp(sdf.b - 0.5, -0.5, 0.0)) * 2.0;
-    let dist_out = 1.0 - abs(sdf.b - 0.5) * 2.0;
+    let sd = textureSample(font_atlas, tex_sampler, in.uv);
+    
+    let fill_dist = smoothstep(fill_smoothcenter - smoothing, fill_smoothcenter + smoothing, sd.b);
+    let outline_dist = smoothstep(outline_smoothcenter - smoothing, outline_smoothcenter + smoothing, sd.b);
 
+    let fill_alpha = 1.0 - fill_dist;
+    let outline_alpha = 1.0 - outline_dist;
 
-    // let fill_alpha = smoothstep(fill_smoothing_center - fill_smooth, fill_smoothing_center + fill_smooth, dist_in);
-    // let outline_alpha = smoothstep(outline_smoothing_center - outline_smooth, outline_smoothing_center + outline_smooth, dist_out);
-    let fill_alpha = smoothstep(0.01, 0.12, dist_in);
-    let outline_alpha = smoothstep(0.7, 0.99, dist_out);
+    let alpha = outline_alpha;
+    let color = mix(outline_color, fill_color, fill_alpha);
 
-    let alpha = max(fill_alpha, outline_alpha);
-    let color = mix(fill_color, outline_color, outline_alpha);
-
-    let fill = vec4f(fill_color, fill_alpha);
-    let outline = vec4f(outline_color, outline_alpha);
-    let both = fill * fill_alpha + outline * outline_alpha;
-
-    return both;
+    return vec4f(color, alpha);
 }

@@ -120,8 +120,8 @@ impl Pipeline2d {
             .enumerate()
             .map(|(i, &id)| {
                 GlyphInstance::new(
-                    Vec2::new(i as f32 * 15.0 + 20.0, 20.0),
-                    Vec2::new(18.0, 32.0),
+                    Vec2::new(i as f32 * 12.0 + 20.0, 20.0),
+                    Vec2::new(14.0, 24.0),
                     id,
                 )
             })
