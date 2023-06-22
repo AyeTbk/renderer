@@ -1,5 +1,11 @@
 use wgpu::CommandEncoder;
 
+use crate::{
+    arena::Handle,
+    asset_server::{shader_source::ShaderSource, AssetChanges},
+    AssetServer,
+};
+
 use super::{
     backend::Backend,
     visual_server::{RenderTarget, RenderTargetInfo},
@@ -28,14 +34,16 @@ impl Pipeline3d {
         scene_uniform_buffer: &wgpu::Buffer,
         render_target_info: RenderTargetInfo,
         backend: &mut Backend,
+        asset_server: &mut AssetServer,
     ) -> Self {
+        let shader_source_handle = asset_server
+            .load_shader_source("src/renderer/shaders/shader.wgsl")
+            .unwrap();
+        let shader_source = asset_server.get_shader_source(shader_source_handle);
         let shaders = Shaders {
+            render_meshes_source: shader_source_handle,
             render_meshes: backend
-                .device
-                .create_shader_module(wgpu::ShaderModuleDescriptor {
-                    label: Some("render meshes shader"),
-                    source: wgpu::ShaderSource::Wgsl(include_str!("shaders/shader.wgsl").into()),
-                }),
+                .create_shader_module("render meshes shader", shader_source.source()),
         };
 
         let bind_group_layouts = BindGroupLayouts {
@@ -151,6 +159,24 @@ impl Pipeline3d {
         self.rebuild_steps(backend);
     }
 
+    pub fn notify_asset_changes(
+        &mut self,
+        changes: &AssetChanges,
+        backend: &mut Backend,
+        asset_server: &mut AssetServer,
+    ) {
+        if changes
+            .shader_sources
+            .contains(&self.data.shaders.render_meshes_source)
+        {
+            let source = asset_server.get_shader_source(self.data.shaders.render_meshes_source);
+            self.data.shaders.render_meshes =
+                backend.create_shader_module("render meshes shader", source.source());
+
+            self.rebuild_steps(backend);
+        }
+    }
+
     pub fn render(
         &self,
         encoder: &mut CommandEncoder,
@@ -207,6 +233,7 @@ pub struct BindGroupLayouts {
 }
 
 pub struct Shaders {
+    pub render_meshes_source: Handle<ShaderSource>,
     pub render_meshes: wgpu::ShaderModule,
 }
 

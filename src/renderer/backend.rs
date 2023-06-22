@@ -250,6 +250,14 @@ impl Backend {
         );
     }
 
+    pub fn create_shader_module(&mut self, label: &str, source: &str) -> wgpu::ShaderModule {
+        self.device
+            .create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some(label),
+                source: wgpu::ShaderSource::Wgsl(source.into()),
+            })
+    }
+
     pub fn create_vertex_buffer<T>(&mut self, vertices: &[T]) -> wgpu::Buffer
     where
         T: Vertexish,

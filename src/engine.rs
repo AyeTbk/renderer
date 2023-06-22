@@ -16,9 +16,10 @@ pub struct Engine {
 
 impl Engine {
     pub fn new(window: &Window) -> Self {
+        let mut asset_server = AssetServer::new();
         Self {
-            asset_server: AssetServer::new(),
-            visual_server: VisualServer::new(window),
+            visual_server: VisualServer::new(window, &mut asset_server),
+            asset_server,
             input: Default::default(),
             display: Default::default(),
             scene: Scene::new_empty(),

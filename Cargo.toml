@@ -16,11 +16,14 @@ glam = "0.24"
 # Windowing
 winit = "0.28"
 
+# Loading models and scenes
+gltf = "1.1"
+
 # Loading images
 asset_image = { path = "crates/asset_image" }
 
-# Loading models and scenes
-gltf = "1.1"
+# Validating shaders
+naga = "*"
 
 # For WGPU logging
 env_logger = "0.10"

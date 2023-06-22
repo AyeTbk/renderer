@@ -69,7 +69,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     }
 
     let ambient_light = scene.ambient_light.rgb * scene.ambient_light.a;
-    
+ 
     // Sun light (blinn-phong)
     let from_frag_to_light_dir = -scene.sun_dir.xyz;
     let sun_diffuse_intensity = max(dot(normal, from_frag_to_light_dir), 0.0);
@@ -82,7 +82,7 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
     let sun_spec = scene.sun_color.rgb * scene.sun_color.a * sun_spec_intensity;
     
     let sun_light = sun_diffuse + sun_spec;
-        
+
     let color = (ambient_light + sun_light) * base_color.rgb;
     
     return vec4f(color, base_color.a);

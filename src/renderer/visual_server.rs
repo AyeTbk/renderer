@@ -35,7 +35,7 @@ pub struct VisualServer {
 }
 
 impl VisualServer {
-    pub fn new(window: &winit::window::Window) -> Self {
+    pub fn new(window: &winit::window::Window, asset_server: &mut AssetServer) -> Self {
         let mut backend = Backend::new(window);
 
         let viewport_uniform = ViewportUniform {
@@ -73,6 +73,7 @@ impl VisualServer {
             &render_scene_data.uniform_buffer,
             render_target.info(),
             &mut backend,
+            asset_server,
         );
 
         let pipeline2d = Pipeline2d::new(
@@ -80,6 +81,7 @@ impl VisualServer {
             &font_texture,
             render_target.info(),
             &mut backend,
+            asset_server,
         );
 
         Self {
@@ -222,6 +224,12 @@ impl VisualServer {
                 self.update_render_material_data(material_handle, asset_server);
             }
         }
+
+        self.pipeline3d
+            .notify_asset_changes(changes, &mut self.backend, asset_server);
+
+        self.pipeline2d
+            .notify_asset_changes(changes, &mut self.backend, asset_server);
     }
 
     fn recreate_render_target(&mut self) {

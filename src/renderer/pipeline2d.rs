@@ -2,6 +2,12 @@ use glam::Vec2;
 use wgpu::CommandEncoder;
 
 pub mod glyph_instance;
+use crate::{
+    arena::Handle,
+    asset_server::{shader_source::ShaderSource, AssetChanges},
+    AssetServer,
+};
+
 use self::glyph_instance::GlyphInstance;
 
 use super::{
@@ -32,14 +38,15 @@ impl Pipeline2d {
         font_texture: &wgpu::Texture,
         render_target_info: RenderTargetInfo,
         backend: &mut Backend,
+        asset_server: &mut AssetServer,
     ) -> Self {
+        let shader_source_handle = asset_server
+            .load_shader_source("src/renderer/shaders/text.wgsl")
+            .unwrap();
+        let shader_source = asset_server.get_shader_source(shader_source_handle);
         let shaders = Shaders {
-            render_text: backend
-                .device
-                .create_shader_module(wgpu::ShaderModuleDescriptor {
-                    label: Some("render text shader"),
-                    source: wgpu::ShaderSource::Wgsl(include_str!("shaders/text.wgsl").into()),
-                }),
+            render_text_source: shader_source_handle,
+            render_text: backend.create_shader_module("render text shader", shader_source.source()),
         };
 
         let bind_group_layouts = BindGroupLayouts {
@@ -166,6 +173,24 @@ impl Pipeline2d {
         );
     }
 
+    pub fn notify_asset_changes(
+        &mut self,
+        changes: &AssetChanges,
+        backend: &mut Backend,
+        asset_server: &mut AssetServer,
+    ) {
+        if changes
+            .shader_sources
+            .contains(&self.data.shaders.render_text_source)
+        {
+            let source = asset_server.get_shader_source(self.data.shaders.render_text_source);
+            self.data.shaders.render_text =
+                backend.create_shader_module("render text shader", source.source());
+
+            self.rebuild_pipelines(backend);
+        }
+    }
+
     pub fn render(&self, encoder: &mut CommandEncoder, render_target: &RenderTarget) {
         let (color_attachment, _depth_stencil_attachment) = render_target.render_pass_attachments();
 
@@ -230,6 +255,7 @@ pub struct BindGroupLayouts {
 }
 
 pub struct Shaders {
+    pub render_text_source: Handle<ShaderSource>,
     pub render_text: wgpu::ShaderModule,
 }
 

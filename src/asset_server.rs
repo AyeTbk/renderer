@@ -1,18 +1,27 @@
-use std::path::{Path, PathBuf};
+use std::{
+    collections::HashSet,
+    path::{Path, PathBuf},
+};
 
 use crate::{
     arena::{Arena, Handle},
     Image, Material, Mesh, Scene, Timestamp,
 };
 
+use self::shader_source::ShaderSource;
+
 mod gltf;
+pub mod shader_source;
+
+const FILES_CHECK_POLL_INTERVAL: f64 = 0.25;
 
 #[derive(Default)]
 pub struct AssetServer {
     scenes: Arena<Asset<Scene>, Handle<Scene>>,
     meshes: Arena<Asset<Mesh>, Handle<Mesh>>,
-    images: Arena<Asset<Image>, Handle<Image>>,
     materials: Arena<Asset<Material>, Handle<Material>>,
+    images: Arena<Asset<Image>, Handle<Image>>,
+    shader_sources: Arena<Asset<ShaderSource>, Handle<ShaderSource>>,
     changes: AssetChanges,
     last_changes_check: Timestamp,
 }
@@ -20,6 +29,10 @@ pub struct AssetServer {
 impl AssetServer {
     pub fn new() -> Self {
         Default::default()
+    }
+
+    pub fn get_scene(&self, handle: Handle<Scene>) -> &Scene {
+        &self.scenes.get(handle).asset
     }
 
     pub fn get_mesh(&self, handle: Handle<Mesh>) -> &Mesh {
@@ -35,12 +48,17 @@ impl AssetServer {
     }
 
     pub fn get_image_mut(&mut self, handle: Handle<Image>) -> &mut Image {
-        self.changes.images.push(handle);
+        self.changes.images.insert(handle);
         &mut self.images.get_mut(handle).asset
     }
 
-    pub fn get_scene(&self, handle: Handle<Scene>) -> &Scene {
-        &self.scenes.get(handle).asset
+    pub fn get_shader_source(&self, handle: Handle<ShaderSource>) -> &ShaderSource {
+        &self.shader_sources.get(handle).asset
+    }
+
+    pub fn get_shader_source_mut(&mut self, handle: Handle<ShaderSource>) -> &mut ShaderSource {
+        self.changes.shader_sources.insert(handle);
+        &mut self.shader_sources.get_mut(handle).asset
     }
 
     pub fn add_scene(&mut self, scene: Scene) -> Handle<Scene> {
@@ -51,13 +69,17 @@ impl AssetServer {
         self.meshes.allocate(Asset::new(mesh))
     }
 
+    pub fn add_material(&mut self, material: Material) -> Handle<Material> {
+        self.materials.allocate(Asset::new(material))
+    }
+
     pub fn add_image(&mut self, mut image: Image) -> Handle<Image> {
         let _ = image.make_mips();
         self.images.allocate(Asset::new(image))
     }
 
-    pub fn add_material(&mut self, material: Material) -> Handle<Material> {
-        self.materials.allocate(Asset::new(material))
+    pub fn add_shader_source(&mut self, shader_source: ShaderSource) -> Handle<ShaderSource> {
+        self.shader_sources.allocate(Asset::new(shader_source))
     }
 
     pub fn load_scene(&mut self, path: &str) -> Result<Handle<Scene>, String> {
@@ -79,16 +101,43 @@ impl AssetServer {
     ) -> Result<(), String> {
         let path = self
             .asset_path(handle)
-            .ok_or_else(|| "cannot reload a pathless asset".to_string())?;
+            .ok_or_else(|| "cannot reload a pathless image".to_string())?;
+
         let mut image = Image::load_from_path(path)?;
+        self.set_asset_timestamp(handle, new_timestamp);
+
         let _ = image.make_mips();
         *self.get_image_mut(handle) = image;
+        Ok(())
+    }
+
+    pub fn load_shader_source(&mut self, path: &str) -> Result<Handle<ShaderSource>, String> {
+        let shader_source = ShaderSource::load_from_path(path)?;
+        let handle = self.add_shader_source(shader_source);
+        self.set_asset_path(handle, path);
+        Ok(handle)
+    }
+
+    pub fn reload_shader_source(
+        &mut self,
+        handle: Handle<ShaderSource>,
+        new_timestamp: Timestamp,
+    ) -> Result<(), String> {
+        let path = self
+            .asset_path(handle)
+            .ok_or_else(|| "cannot reload a pathless shader source".to_string())?;
+
+        let shader_source = ShaderSource::load_from_path(path)?;
         self.set_asset_timestamp(handle, new_timestamp);
+
+        shader_source.validate()?;
+
+        *self.get_shader_source_mut(handle) = shader_source;
         Ok(())
     }
 
     pub(crate) fn take_asset_changes(&mut self) -> AssetChanges {
-        if self.last_changes_check.seconds_since() > 0.25 {
+        if self.last_changes_check.seconds_since() > FILES_CHECK_POLL_INTERVAL {
             self.check_for_file_changes();
 
             self.last_changes_check = Timestamp::now();
@@ -108,9 +157,22 @@ impl AssetServer {
                 images_to_reload.push((handle, modified_timestamp));
             }
         }
-
         for (handle, new_timestamp) in images_to_reload {
             let _ = self.reload_image(handle, new_timestamp);
+        }
+
+        let mut shader_sources_to_reload = Vec::new();
+        for (handle, asset) in self.shader_sources.elements() {
+            let Some(path) = &asset.path else { continue };
+            let Ok(file_metadata) = std::fs::metadata(path) else { continue };
+            let Ok(modified_time) = file_metadata.modified() else { continue };
+            let modified_timestamp = Timestamp::from(modified_time);
+            if asset.timestamp < modified_timestamp {
+                shader_sources_to_reload.push((handle, modified_timestamp));
+            }
+        }
+        for (handle, new_timestamp) in shader_sources_to_reload {
+            let _ = self.reload_shader_source(handle, new_timestamp);
         }
     }
 }
@@ -124,11 +186,14 @@ macro_rules! asset_dispatch {
         } else if let Ok(handle) = handle.downcast::<Mesh>() {
             let $name = $self.meshes.get_mut(handle);
             $toks
+        } else if let Ok(handle) = handle.downcast::<Material>() {
+            let $name = $self.materials.get_mut(handle);
+            $toks
         } else if let Ok(handle) = handle.downcast::<Image>() {
             let $name = $self.images.get_mut(handle);
             $toks
-        } else if let Ok(handle) = handle.downcast::<Material>() {
-            let $name = $self.materials.get_mut(handle);
+        } else if let Ok(handle) = handle.downcast::<ShaderSource>() {
+            let $name = $self.shader_sources.get_mut(handle);
             $toks
         } else {
             panic!(
@@ -191,5 +256,6 @@ impl<T> Asset<T> {
 
 #[derive(Default)]
 pub struct AssetChanges {
-    pub images: Vec<Handle<Image>>,
+    pub images: HashSet<Handle<Image>>,
+    pub shader_sources: HashSet<Handle<ShaderSource>>,
 }
