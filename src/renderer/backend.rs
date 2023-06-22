@@ -5,6 +5,11 @@ use wgpu::{
     BindGroupDescriptor,
 };
 
+// Note:
+// Interesting reads
+// Nvidia Vulkan tips and tricks: https://developer.nvidia.com/blog/vulkan-dos-donts/#entry-content-comments
+// Amd RDNA Vk&D3D12 tips and tricks: https://gpuopen.com/learn/rdna-performance-guide/
+
 pub struct Backend {
     render_size: UVec2,
     //
@@ -22,6 +27,7 @@ pub struct Backend {
 }
 
 impl Backend {
+    // NOTE: Read up on "reversed depth buffer trick". Might be interesting.
     pub const DEPTH_TEXTURE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
     pub fn new(window: &winit::window::Window) -> Self {

@@ -175,6 +175,9 @@ impl VisualServer {
 
         self.pipeline2d.render(&mut encoder, &self.render_target);
 
+        // FIXME: Strive to minimise the amount of submits across the board / submit as much work as possible
+        // to reduce overhead / wasted GPU cycles. Right now there is two submits, one here and one in backend,
+        // where there could be only one.
         self.backend.queue.submit(Some(encoder.finish()));
 
         self.backend

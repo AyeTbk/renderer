@@ -106,6 +106,15 @@ fn main() {
                     .insert(*key, *state == ElementState::Pressed);
 
                 if *state == ElementState::Pressed {
+                    if *key == VirtualKeyCode::F {
+                        let fullscreen_mode = if window.fullscreen().is_none() {
+                            Some(winit::window::Fullscreen::Borderless(None))
+                        } else {
+                            None
+                        };
+                        window.set_fullscreen(fullscreen_mode);
+                    }
+
                     if *key == VirtualKeyCode::M {
                         eng.visual_server.set_msaa(4);
                     } else if *key == VirtualKeyCode::N {
