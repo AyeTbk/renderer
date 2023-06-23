@@ -80,7 +80,7 @@ impl<'a> Write<'a> {
                 }
             };
 
-            let handle = self.asset_server.add_image(image);
+            let handle = self.asset_server.add(image);
             if let Some(path) = maybe_path {
                 self.asset_server.set_asset_path(handle, path);
             }
@@ -89,11 +89,11 @@ impl<'a> Write<'a> {
 
         // Preallocate materials
         self.material_ids_map
-            .insert(None, self.asset_server.add_material(Material::default()));
+            .insert(None, self.asset_server.add(Material::default()));
         for gltf_material in read.gltf.materials() {
             let id = gltf_material.index();
             let pbr = gltf_material.pbr_metallic_roughness();
-            let handle = self.asset_server.add_material(Material {
+            let handle = self.asset_server.add(Material {
                 base_color: pbr.base_color_factor().into(),
                 base_color_image: pbr.base_color_texture().and_then(|info| {
                     let id = info.texture().index();
@@ -107,7 +107,7 @@ impl<'a> Write<'a> {
         for gltf_mesh in read.gltf.meshes() {
             let id = gltf_mesh.index();
             let mesh = self.gltf_mesh_to_mesh(&gltf_mesh, read)?;
-            let handle = self.asset_server.add_mesh(mesh);
+            let handle = self.asset_server.add(mesh);
             self.meshes_ids_map.insert(id, handle);
         }
 
@@ -119,7 +119,7 @@ impl<'a> Write<'a> {
                 self.load_node_recursive(gltf_node, scene.root, &mut scene);
             }
 
-            let scene_handle = self.asset_server.add_scene(scene);
+            let scene_handle = self.asset_server.add(scene);
             return Ok(scene_handle);
         }
 

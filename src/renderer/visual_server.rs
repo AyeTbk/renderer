@@ -199,7 +199,7 @@ impl VisualServer {
     pub fn set_scene(&mut self, scene: Handle<Scene>, asset_server: &AssetServer) {
         self.reset_scene();
 
-        let scene = asset_server.get_scene(scene);
+        let scene = asset_server.get(scene);
         self.register_node_recursive(Affine3A::IDENTITY, scene.root, scene, asset_server);
     }
 
@@ -312,7 +312,7 @@ impl VisualServer {
         let mut materials_to_register = Vec::new();
 
         if let Entry::Vacant(e) = self.render_scene.meshes.entry(handle) {
-            let mesh = asset_server.get_mesh(handle);
+            let mesh = asset_server.get(handle);
 
             let mut render_submeshes = Vec::new();
             for submesh in &mesh.submeshes {
@@ -340,7 +340,7 @@ impl VisualServer {
         if self.render_scene.materials.contains_key(&handle) {
             return;
         }
-        let material = asset_server.get_material(handle);
+        let material = asset_server.get(handle);
 
         if let Some(image) = material.base_color_image {
             self.register_texture(image, asset_server);
@@ -354,7 +354,7 @@ impl VisualServer {
         handle: Handle<Material>,
         asset_server: &AssetServer,
     ) {
-        let material = asset_server.get_material(handle);
+        let material = asset_server.get(handle);
         let material_uniform = MaterialUniform {
             base_color: material.base_color.into(),
         };
@@ -394,7 +394,7 @@ impl VisualServer {
     }
 
     fn update_texture(&mut self, handle: Handle<Image>, asset_server: &AssetServer) {
-        let image = asset_server.get_image(handle);
+        let image = asset_server.get(handle);
         let texture = self.backend.create_color_texture(
             image.width(),
             image.height(),

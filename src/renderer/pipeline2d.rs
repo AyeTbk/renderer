@@ -43,7 +43,7 @@ impl Pipeline2d {
         let shader_source_handle = asset_server
             .load_shader_source("src/renderer/shaders/text.wgsl")
             .unwrap();
-        let shader_source = asset_server.get_shader_source(shader_source_handle);
+        let shader_source = asset_server.get(shader_source_handle);
         let shaders = Shaders {
             render_text_source: shader_source_handle,
             render_text: backend.create_shader_module("render text shader", shader_source.source()),
@@ -183,7 +183,7 @@ impl Pipeline2d {
             .shader_sources
             .contains(&self.data.shaders.render_text_source)
         {
-            let source = asset_server.get_shader_source(self.data.shaders.render_text_source);
+            let source = asset_server.get(self.data.shaders.render_text_source);
             self.data.shaders.render_text =
                 backend.create_shader_module("render text shader", source.source());
 

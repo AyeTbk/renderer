@@ -1,4 +1,7 @@
-use std::{any::TypeId, marker::PhantomData};
+use std::{
+    any::{Any, TypeId},
+    marker::PhantomData,
+};
 
 #[derive(Debug, Clone)]
 pub struct Arena<T, H = Handle<T>> {
@@ -93,23 +96,30 @@ impl<T> Handle<T> {
     }
 }
 
-impl<T: 'static> Handle<T> {
-    pub fn to_type_erased(self) -> TypeErasedHandle {
-        TypeErasedHandle {
+impl<T: Any> Handle<T> {
+    pub fn to_untyped(self) -> UntypedHandle {
+        UntypedHandle {
             id: self.id,
             erased_type_id: TypeId::of::<T>(),
+        }
+    }
+
+    pub unsafe fn transmute<U: Any>(self) -> Handle<U> {
+        Handle {
+            id: self.id,
+            _ghost: PhantomData,
         }
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct TypeErasedHandle {
+pub struct UntypedHandle {
     id: u32,
     erased_type_id: TypeId,
 }
 
-impl TypeErasedHandle {
-    pub fn downcast<T: 'static>(self) -> Result<Handle<T>, Self> {
+impl UntypedHandle {
+    pub fn downcast<T: Any>(self) -> Result<Handle<T>, Self> {
         if self.erased_type_id == TypeId::of::<T>() {
             Ok(Handle::new(self.id))
         } else {
@@ -119,5 +129,18 @@ impl TypeErasedHandle {
 
     pub fn erased_type_id(&self) -> TypeId {
         self.erased_type_id
+    }
+
+    pub unsafe fn transmute<T: Any>(self) -> Handle<T> {
+        Handle {
+            id: self.id,
+            _ghost: PhantomData,
+        }
+    }
+}
+
+impl<T: Any> PartialEq<Handle<T>> for UntypedHandle {
+    fn eq(&self, other: &Handle<T>) -> bool {
+        *self == other.to_untyped()
     }
 }

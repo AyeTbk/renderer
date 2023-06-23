@@ -17,7 +17,7 @@ fn main() {
 
     // Load font
     let font_handle = eng.asset_server.load_image("data/sdffont.png").unwrap();
-    let font_image = eng.asset_server.get_image(font_handle);
+    let font_image = eng.asset_server.get(font_handle);
     eng.visual_server.set_font_image(font_image);
 
     // Load scene
@@ -30,7 +30,7 @@ fn main() {
         // .load_scene("data/scenes/uvs.glb")
         // .load_scene("data/scenes/checker-world.glb")
         .unwrap();
-    eng.scene = eng.asset_server.get_scene(scene).clone();
+    eng.scene = eng.asset_server.get(scene).clone();
 
     // Setup first person camera
     eng.scene.add_allocate_child(

@@ -39,7 +39,7 @@ impl Pipeline3d {
         let shader_source_handle = asset_server
             .load_shader_source("src/renderer/shaders/shader.wgsl")
             .unwrap();
-        let shader_source = asset_server.get_shader_source(shader_source_handle);
+        let shader_source = asset_server.get(shader_source_handle);
         let shaders = Shaders {
             render_meshes_source: shader_source_handle,
             render_meshes: backend
@@ -169,7 +169,7 @@ impl Pipeline3d {
             .shader_sources
             .contains(&self.data.shaders.render_meshes_source)
         {
-            let source = asset_server.get_shader_source(self.data.shaders.render_meshes_source);
+            let source = asset_server.get(self.data.shaders.render_meshes_source);
             self.data.shaders.render_meshes =
                 backend.create_shader_module("render meshes shader", source.source());
 
