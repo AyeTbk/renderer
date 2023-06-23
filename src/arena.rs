@@ -4,52 +4,48 @@ use std::{
 };
 
 #[derive(Debug, Clone)]
-pub struct Arena<T, H = Handle<T>> {
-    elements: Vec<T>,
-    _ghost: PhantomData<*const H>,
+pub struct Arena<T> {
+    slots: Vec<T>,
 }
 
-impl<T, U> Arena<T, Handle<U>> {
+impl<T> Arena<T> {
     pub fn new() -> Self {
         Self {
-            elements: Vec::default(),
-            _ghost: PhantomData,
+            slots: Vec::default(),
         }
     }
 
-    pub fn allocate(&mut self, t: T) -> Handle<U> {
-        let id = self.elements.len() as u32;
-        self.elements.push(t);
+    pub fn allocate(&mut self, t: T) -> Handle<T> {
+        let id = self.slots.len() as u32;
+        self.slots.push(t);
         Handle {
             id,
             _ghost: PhantomData,
         }
     }
 
-    pub fn get(&self, handle: Handle<U>) -> &T {
-        self.elements.get(handle.id as usize).expect("bad handle")
+    pub fn get(&self, handle: Handle<T>) -> &T {
+        self.slots.get(handle.id as usize).expect("bad handle")
     }
 
-    pub fn get_mut(&mut self, handle: Handle<U>) -> &mut T {
-        self.elements
-            .get_mut(handle.id as usize)
-            .expect("bad handle")
+    pub fn get_mut(&mut self, handle: Handle<T>) -> &mut T {
+        self.slots.get_mut(handle.id as usize).expect("bad handle")
     }
 
-    pub fn replace(&mut self, handle: Handle<U>, t: T) -> T {
+    pub fn replace(&mut self, handle: Handle<T>, t: T) -> T {
         let dst = self.get_mut(handle);
         std::mem::replace(dst, t)
     }
 
-    pub fn elements(&self) -> impl Iterator<Item = (Handle<U>, &T)> {
-        self.elements
+    pub fn elements(&self) -> impl Iterator<Item = (Handle<T>, &T)> {
+        self.slots
             .iter()
             .enumerate()
             .map(|(i, el)| (Handle::new(i as u32), el))
     }
 }
 
-impl<T, U> Default for Arena<T, Handle<U>> {
+impl<T> Default for Arena<T> {
     fn default() -> Self {
         Self::new()
     }
@@ -58,6 +54,31 @@ impl<T, U> Default for Arena<T, Handle<U>> {
 pub struct Handle<T> {
     id: u32,
     _ghost: PhantomData<*const T>,
+}
+
+impl<T> Handle<T> {
+    fn new(id: u32) -> Self {
+        Handle {
+            id,
+            _ghost: PhantomData,
+        }
+    }
+}
+
+impl<T: Any> Handle<T> {
+    pub fn to_type_erased(self) -> TypeErasedHandle {
+        TypeErasedHandle {
+            id: self.id,
+            erased_type_id: TypeId::of::<T>(),
+        }
+    }
+
+    pub unsafe fn transmute<U: Any>(self) -> Handle<U> {
+        Handle {
+            id: self.id,
+            _ghost: PhantomData,
+        }
+    }
 }
 
 impl<T> std::fmt::Debug for Handle<T> {
@@ -86,31 +107,7 @@ impl<T> std::hash::Hash for Handle<T> {
         self.id.hash(state)
     }
 }
-
-impl<T> Handle<T> {
-    fn new(id: u32) -> Self {
-        Handle {
-            id,
-            _ghost: PhantomData,
-        }
-    }
-}
-
-impl<T: Any> Handle<T> {
-    pub fn to_type_erased(self) -> TypeErasedHandle {
-        TypeErasedHandle {
-            id: self.id,
-            erased_type_id: TypeId::of::<T>(),
-        }
-    }
-
-    pub unsafe fn transmute<U: Any>(self) -> Handle<U> {
-        Handle {
-            id: self.id,
-            _ghost: PhantomData,
-        }
-    }
-}
+unsafe impl<T> Send for Handle<T> {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TypeErasedHandle {

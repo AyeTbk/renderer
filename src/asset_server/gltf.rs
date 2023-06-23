@@ -66,24 +66,22 @@ impl<'a> Write<'a> {
         // Preallocate textures/images
         for gltf_texture in read.gltf.textures() {
             let id = gltf_texture.index();
-            let (image, maybe_path) = match gltf_texture.source().source() {
+            let handle = match gltf_texture.source().source() {
                 gltf::image::Source::Uri { uri, .. } => {
                     let full_path = Self::make_full_path(uri, read);
-                    (Image::load_from_path(&full_path)?, Some(full_path))
+                    self.asset_server
+                        .load(&full_path.to_string_lossy().to_string())
                 }
                 gltf::image::Source::View { view, .. } => {
                     if let Source::Uri(path) = view.buffer().source() {
                         self.load_external_bin(path, read)?;
                     }
                     let bytes = self.get_bytes_from_view(&view, read)?;
-                    (Image::load_from_memory(bytes)?, None)
+                    let image = Image::load_from_memory(bytes)?;
+                    self.asset_server.add(image)
                 }
             };
 
-            let handle = self.asset_server.add(image);
-            if let Some(path) = maybe_path {
-                self.asset_server.set_asset_path(handle, path);
-            }
             self.images_ids_map.insert(id, handle);
         }
 
@@ -394,6 +392,7 @@ impl<'a> Write<'a> {
     }
 
     fn make_full_path(path: &str, read: &'a Read) -> PathBuf {
+        // TODO remove PathBuf and use String instead
         let mut full_path = PathBuf::new();
         full_path.push(&read.base_path);
         full_path.push(path);

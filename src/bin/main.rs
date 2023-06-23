@@ -1,3 +1,4 @@
+use asset_image::Image;
 use glam::{Affine3A, Mat3A, Quat, UVec2, Vec2, Vec3, Vec3A};
 use renderer::{Engine, Node};
 use winit::{
@@ -16,9 +17,9 @@ fn main() {
     let mut eng = Engine::new(&window);
 
     // Load font
-    let font_handle = eng.asset_server.load_image("data/sdffont.png").unwrap();
-    let font_image = eng.asset_server.get(font_handle);
-    eng.visual_server.set_font_image(font_image);
+    let font_handle = eng.asset_server.load::<Image>("data/sdffont.png");
+    eng.visual_server
+        .set_font_image(font_handle, &eng.asset_server);
 
     // Load scene
     let scene = eng

@@ -32,6 +32,8 @@ impl Engine {
     }
 
     pub fn update(&mut self) {
+        self.asset_server.update();
+
         self.notify_asset_changes();
 
         self.update_input();

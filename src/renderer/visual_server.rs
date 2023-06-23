@@ -28,6 +28,7 @@ pub struct VisualServer {
     render_scene_data: RenderSceneData,
     white_texture: wgpu::Texture,
     font_texture: wgpu::Texture,
+    font_handle: Option<Handle<Image>>,
     //
     render_target: RenderTarget,
     pipeline3d: Pipeline3d,
@@ -93,6 +94,7 @@ impl VisualServer {
             render_scene_data,
             white_texture,
             font_texture,
+            font_handle: None,
             //
             render_target,
             pipeline3d,
@@ -122,7 +124,9 @@ impl VisualServer {
         self.recreate_render_target();
     }
 
-    pub fn set_font_image(&mut self, image: &Image) {
+    pub fn set_font_image(&mut self, handle: Handle<Image>, asset_server: &AssetServer) {
+        self.font_handle = Some(handle);
+        let image = asset_server.get(handle);
         self.font_texture = self.backend.create_color_texture_linear(
             image.width(),
             image.height(),
@@ -208,24 +212,34 @@ impl VisualServer {
     }
 
     pub fn notify_asset_changes(&mut self, changes: &AssetChanges, asset_server: &mut AssetServer) {
+        let mut textures_to_update = Vec::new();
+        let mut materials_to_update = Vec::new();
+
         for &changed_image_handle in &changes.images {
-            let mut textures_to_update = Vec::new();
-            for &texture_handle in self.render_scene.textures.keys() {
-                textures_to_update.push(texture_handle);
-            }
-            for texture_handle in textures_to_update {
-                self.update_texture(texture_handle, asset_server);
+            if self
+                .render_scene
+                .textures
+                .contains_key(&changed_image_handle)
+            {
+                textures_to_update.push(changed_image_handle);
             }
 
-            let mut materials_to_update = Vec::new();
             for (&material_handle, material) in self.render_scene.materials.iter() {
                 if material.used_textures.contains(&changed_image_handle) {
                     materials_to_update.push(material_handle);
                 }
             }
-            for material_handle in materials_to_update {
-                self.update_render_material_data(material_handle, asset_server);
+
+            if self.font_handle == Some(changed_image_handle) {
+                self.set_font_image(changed_image_handle, asset_server);
             }
+        }
+
+        for texture_handle in textures_to_update {
+            self.update_texture(texture_handle, asset_server);
+        }
+        for material_handle in materials_to_update {
+            self.update_render_material_data(material_handle, asset_server);
         }
 
         self.pipeline3d

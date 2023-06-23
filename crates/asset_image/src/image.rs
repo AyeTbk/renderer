@@ -17,7 +17,7 @@ impl Image {
     }
 
     pub fn new_dummy() -> Self {
-        let inner = image::RgbaImage::from_pixel(1, 1, image::Rgba([255, 255, 255, 255]));
+        let inner = image::RgbaImage::from_pixel(1, 1, image::Rgba([128, 128, 128, 255]));
         Self {
             inner: inner.into(),
             mips: None,
