@@ -97,8 +97,8 @@ impl<T> Handle<T> {
 }
 
 impl<T: Any> Handle<T> {
-    pub fn to_untyped(self) -> UntypedHandle {
-        UntypedHandle {
+    pub fn to_type_erased(self) -> TypeErasedHandle {
+        TypeErasedHandle {
             id: self.id,
             erased_type_id: TypeId::of::<T>(),
         }
@@ -113,12 +113,12 @@ impl<T: Any> Handle<T> {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct UntypedHandle {
+pub struct TypeErasedHandle {
     id: u32,
     erased_type_id: TypeId,
 }
 
-impl UntypedHandle {
+impl TypeErasedHandle {
     pub fn downcast<T: Any>(self) -> Result<Handle<T>, Self> {
         if self.erased_type_id == TypeId::of::<T>() {
             Ok(Handle::new(self.id))
@@ -139,8 +139,8 @@ impl UntypedHandle {
     }
 }
 
-impl<T: Any> PartialEq<Handle<T>> for UntypedHandle {
+impl<T: Any> PartialEq<Handle<T>> for TypeErasedHandle {
     fn eq(&self, other: &Handle<T>) -> bool {
-        *self == other.to_untyped()
+        *self == other.to_type_erased()
     }
 }

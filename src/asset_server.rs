@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::{
-    arena::{Arena, Handle, UntypedHandle},
+    arena::{Arena, Handle, TypeErasedHandle},
     Image, Material, Mesh, Scene, Timestamp,
 };
 
@@ -19,7 +19,7 @@ const FILES_CHECK_POLL_INTERVAL: f64 = 0.25;
 #[derive(Default)]
 pub struct AssetServer {
     arenas: HashMap<TypeId, Arena<Box<dyn Asset>>>,
-    metadata: HashMap<UntypedHandle, Metadata>,
+    metadata: HashMap<TypeErasedHandle, Metadata>,
     changes: AssetChanges,
     last_changes_check: Timestamp,
 }
@@ -54,7 +54,7 @@ impl AssetServer {
             .allocate(Box::new(asset));
         let typed_handle: Handle<A> = unsafe { generic_handle.transmute() };
         self.metadata
-            .insert(typed_handle.to_untyped(), Metadata::new());
+            .insert(typed_handle.to_type_erased(), Metadata::new());
         typed_handle
     }
 
@@ -142,7 +142,7 @@ impl AssetServer {
             .or_insert_with(|| Arena::new())
     }
 
-    fn _set_asset(&mut self, handle: UntypedHandle, asset: Box<dyn Asset>) {
+    fn _set_asset(&mut self, handle: TypeErasedHandle, asset: Box<dyn Asset>) {
         // TODO notify changes
         let generic_handle = unsafe { handle.transmute() };
         let slot = self
@@ -155,13 +155,13 @@ impl AssetServer {
 
     fn get_metadata<A: Asset>(&self, handle: Handle<A>) -> &Metadata {
         self.metadata
-            .get(&handle.to_untyped())
+            .get(&handle.to_type_erased())
             .expect("asset metadata should exist is a handle to it exists")
     }
 
     fn get_metadata_mut<A: Asset>(&mut self, handle: Handle<A>) -> &mut Metadata {
         self.metadata
-            .get_mut(&handle.to_untyped())
+            .get_mut(&handle.to_type_erased())
             .expect("asset metadata should exist is a handle to it exists")
     }
 
