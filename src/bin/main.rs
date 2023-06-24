@@ -10,7 +10,10 @@ use winit::{
 
 fn main() {
     let event_loop = EventLoop::new();
-    let window = WindowBuilder::new().build(&event_loop).unwrap();
+    let window = WindowBuilder::new()
+        .with_title("renderer")
+        .build(&event_loop)
+        .unwrap();
 
     let mut cursor_grabbed = false;
 
