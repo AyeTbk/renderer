@@ -1,8 +1,9 @@
 use std::{
     any::{Any, TypeId},
-    collections::{HashMap, HashSet},
-    sync::mpsc,
+    collections::{HashMap, HashSet, VecDeque},
+    sync::{mpsc, Mutex, RwLock},
     thread,
+    time::Duration,
 };
 
 use crate::{
@@ -37,7 +38,7 @@ impl AssetServer {
     pub fn new() -> Self {
         let (work_sender, work_receiver) = mpsc::channel();
         let (work_result_sender, work_result_receiver) = mpsc::channel();
-        let _ = Self::make_work_thread(work_receiver, work_result_sender);
+        let _ = Self::make_work_threads(work_receiver, work_result_sender);
 
         Self {
             arenas: Default::default(),
@@ -170,13 +171,13 @@ impl AssetServer {
     fn get_metadata<A: Asset>(&self, handle: Handle<A>) -> &Metadata {
         self.metadata
             .get(&handle.to_type_erased())
-            .expect("asset metadata should exist is a handle to it exists")
+            .expect("asset metadata should exist if a handle to it exists")
     }
 
     fn get_metadata_mut<A: Asset>(&mut self, handle: Handle<A>) -> &mut Metadata {
         self.metadata
             .get_mut(&handle.to_type_erased())
-            .expect("asset metadata should exist is a handle to it exists")
+            .expect("asset metadata should exist if a handle to it exists")
     }
 
     fn check_for_file_changes(&mut self) {
@@ -243,22 +244,63 @@ impl AssetServer {
             .unwrap();
     }
 
-    fn make_work_thread(
+    fn make_work_threads(
         work_receiver: mpsc::Receiver<Work>,
         result_sender: mpsc::Sender<WorkResult>,
     ) -> thread::JoinHandle<()> {
-        thread::spawn(move || loop {
-            match work_receiver.recv().unwrap() {
-                Work::Terminate => break,
-                Work::LoadFromPath {
-                    handle,
-                    loader,
-                    path,
-                } => {
-                    let result = loader.load_from_path(&path);
-                    result_sender.send((handle, result)).unwrap();
+        thread::spawn(move || {
+            let available_work: Mutex<VecDeque<Work>> = Mutex::new(VecDeque::new());
+            let finished_work: Mutex<VecDeque<WorkResult>> = Mutex::new(VecDeque::new());
+            let terminate: RwLock<bool> = RwLock::new(false);
+
+            const SPARE_TIME_SLEEP_DURATION: Duration = Duration::from_millis(100);
+
+            thread::scope(|s| {
+                let core_count = thread::available_parallelism()
+                    .map(|c| c.get().saturating_sub(4)) // chosen by a fair dice roll.
+                    .unwrap_or(1)
+                    .max(1);
+                for _ in 0..core_count {
+                    s.spawn(|| {
+                        while !*terminate.read().unwrap() {
+                            let Some(work) = ({ available_work.lock().unwrap().pop_front() }) else {
+                                thread::sleep(SPARE_TIME_SLEEP_DURATION);
+                                continue;
+                            };
+
+                            match work {
+                                Work::LoadFromPath {
+                                    handle,
+                                    loader,
+                                    path,
+                                } => {
+                                    let result = loader.load_from_path(&path);
+                                    finished_work.lock().unwrap().push_back((handle, result));
+                                }
+                                _ => (),
+                            }
+                        }
+                    });
                 }
-            }
+
+                loop {
+                    while let Ok(work) = work_receiver.recv_timeout(SPARE_TIME_SLEEP_DURATION) {
+                        match work {
+                            Work::Terminate => {
+                                *terminate.write().unwrap() = true;
+                                break;
+                            }
+                            work => {
+                                available_work.lock().unwrap().push_back(work);
+                            }
+                        }
+                    }
+
+                    for work_result in finished_work.lock().unwrap().drain(..) {
+                        result_sender.send(work_result).unwrap();
+                    }
+                }
+            });
         })
     }
 }
