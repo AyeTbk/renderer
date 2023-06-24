@@ -125,21 +125,38 @@ fn downsample_bilinear<const N: usize>(src_size: usize, src: &[u8], dst: &mut [u
     assert_eq!(src.len(), expected_src_len);
     assert_eq!(dst.len(), expected_dst_len);
 
-    fn get_pixel<const N: usize>(buf: &[u8], x: usize, y: usize, size: usize) -> [u8; N] {
-        let row_byte_count = size * N;
-        let idx = y * row_byte_count + x * N;
-        let mut result = [0u8; N];
-        for i in 0..N {
+    fn get_pixel(buf: &[u8], x: usize, y: usize, size: usize) -> [u8; 4] {
+        let row_byte_count = size * 4;
+        let idx = y * row_byte_count + x * 4;
+        let mut result = [0u8; 4];
+        for i in 0..4 {
             result[i] = buf[idx + i];
         }
         result
     }
-    fn set_pixel<const N: usize>(buf: &mut [u8], x: usize, y: usize, size: usize, pixel: [u8; N]) {
-        let row_byte_count = size * N;
-        let idx = y * row_byte_count + x * N;
-        for i in 0..N {
+    fn set_pixel(buf: &mut [u8], x: usize, y: usize, size: usize, pixel: [u8; 4]) {
+        let row_byte_count = size * 4;
+        let idx = y * row_byte_count + x * 4;
+        for i in 0..4 {
             buf[idx + i] = pixel[i];
         }
+    }
+
+    fn srgb_to_rgb(color: [u8; 4]) -> [f32; 4] {
+        [
+            (color[0] as f32 / 255.0).powf(2.2),
+            (color[1] as f32 / 255.0).powf(2.2),
+            (color[2] as f32 / 255.0).powf(2.2),
+            color[3] as f32 / 255.0,
+        ]
+    }
+    fn rgb_to_srgb(color: [f32; 4]) -> [u8; 4] {
+        [
+            (color[0].powf(1.0 / 2.2) * 255.0) as u8,
+            (color[1].powf(1.0 / 2.2) * 255.0) as u8,
+            (color[2].powf(1.0 / 2.2) * 255.0) as u8,
+            (color[3] * 255.0) as u8,
+        ]
     }
 
     for y in 0..dst_size {
@@ -156,28 +173,28 @@ fn downsample_bilinear<const N: usize>(src_size: usize, src: &[u8], dst: &mut [u
             let src_x4 = src_x1 + 1;
             let src_y4 = src_y1 + 1;
 
-            let src1 = get_pixel::<N>(src, src_x1, src_y1, src_size);
-            let src2 = get_pixel::<N>(src, src_x2, src_y2, src_size);
-            let src3 = get_pixel::<N>(src, src_x3, src_y3, src_size);
-            let src4 = get_pixel::<N>(src, src_x4, src_y4, src_size);
+            let src1 = srgb_to_rgb(get_pixel(src, src_x1, src_y1, src_size));
+            let src2 = srgb_to_rgb(get_pixel(src, src_x2, src_y2, src_size));
+            let src3 = srgb_to_rgb(get_pixel(src, src_x3, src_y3, src_size));
+            let src4 = srgb_to_rgb(get_pixel(src, src_x4, src_y4, src_size));
 
             let average = average([src1, src2, src3, src4]);
 
-            set_pixel(dst, x, y, dst_size, average);
+            set_pixel(dst, x, y, dst_size, rgb_to_srgb(average));
         }
     }
 }
 
-fn average<const N: usize, const M: usize>(list: [[u8; N]; M]) -> [u8; N] {
-    let mut sum = [0u32; N];
+fn average<const N: usize, const M: usize>(list: [[f32; N]; M]) -> [f32; N] {
+    let mut sum = [0f32; N];
     for arr in list {
         for i in 0..N {
-            sum[i] += arr[i] as u32;
+            sum[i] += arr[i];
         }
     }
-    let mut result = [0u8; N];
+    let mut result = [0f32; N];
     for i in 0..N {
-        result[i] = (sum[i] / M as u32) as u8;
+        result[i] = sum[i] / M as f32;
     }
     result
 }
