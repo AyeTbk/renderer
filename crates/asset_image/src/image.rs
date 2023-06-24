@@ -142,19 +142,20 @@ fn downsample_bilinear<const N: usize>(src_size: usize, src: &[u8], dst: &mut [u
         }
     }
 
+    const GAMMA: f32 = 2.0;
     fn srgb_to_rgb(color: [u8; 4]) -> [f32; 4] {
         [
-            (color[0] as f32 / 255.0).powf(2.2),
-            (color[1] as f32 / 255.0).powf(2.2),
-            (color[2] as f32 / 255.0).powf(2.2),
+            (color[0] as f32 / 255.0).powi(GAMMA as i32),
+            (color[1] as f32 / 255.0).powi(GAMMA as i32),
+            (color[2] as f32 / 255.0).powi(GAMMA as i32),
             color[3] as f32 / 255.0,
         ]
     }
     fn rgb_to_srgb(color: [f32; 4]) -> [u8; 4] {
         [
-            (color[0].powf(1.0 / 2.2) * 255.0) as u8,
-            (color[1].powf(1.0 / 2.2) * 255.0) as u8,
-            (color[2].powf(1.0 / 2.2) * 255.0) as u8,
+            (color[0].powf(1.0 / GAMMA) * 255.0) as u8,
+            (color[1].powf(1.0 / GAMMA) * 255.0) as u8,
+            (color[2].powf(1.0 / GAMMA) * 255.0) as u8,
             (color[3] * 255.0) as u8,
         ]
     }
