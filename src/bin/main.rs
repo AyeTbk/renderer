@@ -36,6 +36,18 @@ fn main() {
         .unwrap();
     eng.scene = eng.asset_server.get(scene).clone();
 
+    let helmet = eng
+        .asset_server
+        .load_scene("data/scenes/flight/FlightHelmet.gltf")
+        .unwrap();
+    let helmet_scene = eng.asset_server.get(helmet).clone();
+
+    eng.scene.add_allocate_child(
+        eng.scene.root,
+        Node::new_scene(helmet_scene)
+            .with_transform(Affine3A::from_rotation_y(-std::f32::consts::FRAC_PI_2)),
+    );
+
     // Setup first person camera
     eng.scene.add_allocate_child(
         eng.scene.root,
@@ -44,7 +56,7 @@ fn main() {
                 Affine3A::from_rotation_y(-std::f32::consts::FRAC_PI_2)
                     * Affine3A::from_translation(Vec3::new(0.0, 1.0, 0.0)),
             )
-            .with_update(|this, _, ctx| {
+            .with_update(|this, ctx| {
                 // Mouse look
                 let look_speed = Vec2::new(6.0, 6.0);
                 let delta_yaw = ctx.input.delta_view.x * look_speed.x;

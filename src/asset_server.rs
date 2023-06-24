@@ -59,7 +59,7 @@ impl AssetServer {
             .expect("handle type and asset type should match such that this doesnt blow up")
     }
 
-    pub fn _get_mut<A: Asset>(&mut self, handle: Handle<A>) -> &mut A {
+    pub fn get_mut<A: Asset>(&mut self, handle: Handle<A>) -> &mut A {
         let generic_handle = unsafe { handle.transmute() };
         self.get_arena_mut::<A>()
             .get_mut(generic_handle)

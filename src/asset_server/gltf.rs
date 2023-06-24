@@ -117,7 +117,9 @@ impl<'a> Write<'a> {
                 self.load_node_recursive(gltf_node, scene.root, &mut scene);
             }
 
-            let scene_handle = self.asset_server.add(scene);
+            let scene_handle = self.asset_server.add(Scene::new_empty());
+            scene.handle = Some(scene_handle);
+            *self.asset_server.get_mut(scene_handle) = scene;
             return Ok(scene_handle);
         }
 

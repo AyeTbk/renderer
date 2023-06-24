@@ -10,8 +10,12 @@ use crate::{
 
 pub type NodeId = Handle<Node>;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct UniqueNodeId(Handle<Scene>, NodeId);
+
 #[derive(Clone)]
 pub struct Scene {
+    pub handle: Option<Handle<Scene>>,
     pub nodes: Arena<Node>,
     pub root: NodeId,
     pub children: HashMap<NodeId, Vec<NodeId>>,
@@ -22,6 +26,7 @@ impl Scene {
         let mut nodes = Arena::default();
         let root = nodes.allocate(Node::with_data(NodeData::Empty));
         Self {
+            handle: None,
             nodes,
             root,
             children: Default::default(),
@@ -40,13 +45,17 @@ impl Scene {
             .map(|v| v.as_ref())
             .unwrap_or(&[])
     }
+
+    pub fn make_unique_node_id(&self, node_id: NodeId) -> UniqueNodeId {
+        UniqueNodeId(self.handle.expect("dont call this if it crashes"), node_id)
+    }
 }
 
 #[derive(Clone)]
 pub struct Node {
     pub transform: Affine3A,
     pub data: NodeData,
-    pub update_fn: Option<fn(&mut Node, NodeId, Context)>,
+    pub update_fn: Option<fn(&mut Node, &mut Context)>,
 }
 
 impl Node {
@@ -54,12 +63,16 @@ impl Node {
         Self::with_data(NodeData::Empty)
     }
 
+    pub fn new_camera(camera: Camera) -> Self {
+        Self::with_data(NodeData::Camera(camera))
+    }
+
     pub fn new_mesh(mesh: Handle<Mesh>) -> Self {
         Self::with_data(NodeData::Mesh(mesh))
     }
 
-    pub fn new_camera(camera: Camera) -> Self {
-        Self::with_data(NodeData::Camera(camera))
+    pub fn new_scene(scene: Scene) -> Self {
+        Self::with_data(NodeData::Scene(Box::new(scene)))
     }
 
     pub fn with_data(data: NodeData) -> Self {
@@ -75,7 +88,7 @@ impl Node {
         self
     }
 
-    pub fn with_update(mut self, update_fn: fn(&mut Node, NodeId, Context)) -> Self {
+    pub fn with_update(mut self, update_fn: fn(&mut Node, &mut Context)) -> Self {
         self.update_fn = Some(update_fn);
         self
     }
@@ -86,4 +99,5 @@ pub enum NodeData {
     Empty,
     Camera(Camera),
     Mesh(Handle<Mesh>),
+    Scene(Box<Scene>),
 }

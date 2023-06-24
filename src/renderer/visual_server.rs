@@ -6,11 +6,8 @@ use glam::{Affine3A, Mat4, UVec2, Vec3, Vec3Swizzles, Vec4};
 // eventually make it easy to extract in a separate crate (mostly in hopes of getting
 // better compile times). This goes for AssetServer too, I guess.
 use crate::{
-    arena::Handle,
-    asset_server::AssetChanges,
-    image::Image,
-    scene::{NodeData, NodeId},
-    AssetServer, Camera, Color, Material, Mesh, Scene,
+    arena::Handle, asset_server::AssetChanges, image::Image, scene::UniqueNodeId, AssetServer,
+    Camera, Color, Material, Mesh,
 };
 
 use super::{
@@ -192,19 +189,12 @@ impl VisualServer {
 
     pub fn set_mesh_instance(
         &mut self,
-        id: NodeId,
+        id: UniqueNodeId,
         transform: Affine3A,
         mesh_handle: Handle<Mesh>,
         asset_server: &AssetServer,
     ) {
         self.register_mesh_instance(id, transform, mesh_handle, asset_server);
-    }
-
-    pub fn set_scene(&mut self, scene: Handle<Scene>, asset_server: &AssetServer) {
-        self.reset_scene();
-
-        let scene = asset_server.get(scene);
-        self.register_node_recursive(Affine3A::IDENTITY, scene.root, scene, asset_server);
     }
 
     pub fn reset_scene(&mut self) {
@@ -274,32 +264,9 @@ impl VisualServer {
             .update_render_target_info(self.render_target.info(), &mut self.backend);
     }
 
-    fn register_node_recursive(
-        &mut self,
-        parent_transform: Affine3A,
-        node_id: NodeId,
-        scene: &Scene,
-        asset_server: &AssetServer,
-    ) {
-        let node = scene.nodes.get(node_id);
-        let node_transform = parent_transform * node.transform;
-
-        match node.data {
-            NodeData::Empty => (),
-            NodeData::Mesh(mesh_handle) => {
-                self.register_mesh_instance(node_id, node_transform, mesh_handle, asset_server);
-            }
-            NodeData::Camera(_) => (),
-        }
-
-        for &child_id in scene.children_of(node_id) {
-            self.register_node_recursive(node_transform, child_id, scene, asset_server);
-        }
-    }
-
     fn register_mesh_instance(
         &mut self,
-        id: NodeId,
+        id: UniqueNodeId,
         transform: Affine3A,
         handle: Handle<Mesh>,
         asset_server: &AssetServer,
@@ -445,7 +412,7 @@ struct RenderScene {
     meshes: HashMap<Handle<Mesh>, RenderMesh>,
     materials: HashMap<Handle<Material>, RenderMaterial>,
     textures: HashMap<Handle<Image>, wgpu::Texture>,
-    mesh_instances: HashMap<NodeId, RenderMeshInstance>,
+    mesh_instances: HashMap<UniqueNodeId, RenderMeshInstance>,
 }
 
 struct RenderMesh {

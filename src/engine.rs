@@ -38,7 +38,18 @@ impl Engine {
 
         self.update_input();
 
-        self.update_node_recursive(self.scene.root, Affine3A::IDENTITY);
+        Self::update_node_recursive(
+            self.scene.root,
+            &mut self.scene,
+            Affine3A::IDENTITY,
+            &mut Context {
+                asset_server: &mut self.asset_server,
+                visual_server: &mut self.visual_server,
+                display: &self.display,
+                input: &self.input,
+                time: &Time { delta: 1.0 / 60.0 },
+            },
+        );
     }
 
     fn notify_asset_changes(&mut self) {
@@ -69,45 +80,51 @@ impl Engine {
         self.input.pointer_delta = Vec2::ZERO;
     }
 
-    fn update_node_recursive(&mut self, node_id: NodeId, parent_global_transform: Affine3A) {
-        let node = self.scene.nodes.get_mut(node_id);
+    fn update_node_recursive(
+        node_id: NodeId,
+        scene: &mut Scene,
+        parent_global_transform: Affine3A,
+        context: &mut Context,
+    ) {
+        let unique_node_id = scene.make_unique_node_id(node_id);
+        let node = scene.nodes.get_mut(node_id);
 
         if let Some(update_fn) = node.update_fn.take() {
-            update_fn(
-                node,
-                node_id,
-                Context {
-                    asset_server: &mut self.asset_server,
-                    visual_server: &mut self.visual_server,
-                    input: &self.input,
-                    time: &Time { delta: 1.0 / 60.0 },
-                },
-            );
+            update_fn(node, context);
             node.update_fn = Some(update_fn);
         }
 
         let node_global_transform = parent_global_transform * node.transform;
 
         match &mut node.data {
+            NodeData::Empty => (),
             NodeData::Mesh(mesh_handle) => {
-                self.visual_server.set_mesh_instance(
-                    node_id,
+                context.visual_server.set_mesh_instance(
+                    unique_node_id,
                     node_global_transform,
                     *mesh_handle,
-                    &self.asset_server,
+                    context.asset_server,
                 );
             }
             NodeData::Camera(camera) => {
-                camera.aspect_ratio = self.display.window_aspect_ratio();
-                self.visual_server
+                camera.aspect_ratio = context.display.window_aspect_ratio();
+                context
+                    .visual_server
                     .set_camera(&node_global_transform, camera);
             }
-            _ => (),
+            NodeData::Scene(subscene) => {
+                Self::update_node_recursive(
+                    subscene.root,
+                    subscene,
+                    node_global_transform,
+                    context,
+                );
+            }
         }
 
-        let children = self.scene.children_of(node_id).to_vec();
+        let children = scene.children_of(node_id).to_vec();
         for child_id in children {
-            self.update_node_recursive(child_id, node_global_transform);
+            Self::update_node_recursive(child_id, scene, node_global_transform, context);
         }
     }
 }
@@ -115,6 +132,7 @@ impl Engine {
 pub struct Context<'a> {
     pub asset_server: &'a mut AssetServer,
     pub visual_server: &'a mut VisualServer,
+    pub display: &'a Display,
     pub input: &'a Input,
     pub time: &'a Time,
 }
