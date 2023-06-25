@@ -75,7 +75,7 @@ impl Node {
         Self::with_data(NodeData::Scene(Box::new(scene)))
     }
 
-    pub fn new_text(text: impl Into<String>, size: f32) -> Self {
+    pub fn new_text(text: impl Into<Vec<u8>>, size: f32) -> Self {
         Self::with_data(NodeData::Text(text.into(), size))
     }
 
@@ -104,5 +104,5 @@ pub enum NodeData {
     Camera(Camera),
     Mesh(Handle<Mesh>),
     Scene(Box<Scene>),
-    Text(String, f32),
+    Text(Vec<u8>, f32),
 }

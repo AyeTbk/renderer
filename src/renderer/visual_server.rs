@@ -205,10 +205,9 @@ impl VisualServer {
         self.register_mesh_instance(id, transform, mesh_handle, asset_server);
     }
 
-    pub fn set_text(&mut self, id: UniqueNodeId, transform: &Affine3A, text: &str, size: f32) {
+    pub fn set_text(&mut self, id: UniqueNodeId, transform: &Affine3A, text: &[u8], size: f32) {
         let offset = transform.translation.xy();
         let glyphs = text
-            .as_bytes()
             .iter()
             .enumerate()
             .map(|(i, &id)| {
