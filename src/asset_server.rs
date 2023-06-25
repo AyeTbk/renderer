@@ -82,14 +82,33 @@ impl AssetServer {
     pub fn load<A: Asset + Loadable>(&mut self, path: &str) -> Handle<A> {
         let handle = self.add(A::new_placeholder());
         self.set_asset_path(handle, path);
-        self.work_sender
-            .send(Work::LoadFromPath {
-                handle: handle.to_type_erased(),
-                loader: A::new_loader(),
-                path: path.to_owned(),
-            })
-            .unwrap();
+        self.reload(handle);
+
         handle
+    }
+
+    pub fn reload<A: Asset + Loadable>(&mut self, handle: Handle<A>) {
+        let path = self
+            .asset_path(handle)
+            .expect("assets without path cannot be reloaded");
+        let loader = A::new_loader();
+        if loader.only_sync() {
+            if let Ok(boxed_asset) = loader.load_from_path(path) {
+                self.set_asset(handle.to_type_erased(), boxed_asset);
+                self.finish_asset_reload(handle);
+            } else {
+                eprintln!("AssetServer::reload(): asset failed to load: {}", path);
+            }
+        } else {
+            self.work_sender
+                .send(Work::LoadFromPath {
+                    handle: handle.to_type_erased(),
+                    loader,
+                    path: path.to_owned(),
+                })
+                .unwrap();
+        }
+        self.set_asset_timestamp(handle, Timestamp::now());
     }
 
     pub fn load_scene(&mut self, path: &str) -> Result<Handle<Scene>, String> {
@@ -113,7 +132,7 @@ impl AssetServer {
             self.set_asset(handle, asset);
 
             if let Ok(handle) = handle.downcast::<Image>() {
-                self.changes.images.insert(handle);
+                self.finish_asset_reload(handle);
             }
         }
 
@@ -190,28 +209,26 @@ impl AssetServer {
             let Ok(modified_time) = file_metadata.modified() else { continue };
             let modified_timestamp = Timestamp::from(modified_time);
             if self.asset_timestamp(handle) < modified_timestamp {
-                images_to_reload.push((handle, modified_timestamp));
+                images_to_reload.push(handle);
             }
         }
-        for (handle, new_timestamp) in images_to_reload {
-            let path = self.asset_path(handle).unwrap();
-            self.send_load_from_path_work(handle, path);
-            self.set_asset_timestamp(handle, new_timestamp);
+        for handle in images_to_reload {
+            self.reload(handle);
         }
 
-        // let mut shader_sources_to_reload = Vec::new();
-        // for (handle, asset) in self.shader_sources.elements() {
-        //     let Some(path) = &asset.path else { continue };
-        //     let Ok(file_metadata) = std::fs::metadata(path) else { continue };
-        //     let Ok(modified_time) = file_metadata.modified() else { continue };
-        //     let modified_timestamp = Timestamp::from(modified_time);
-        //     if asset.timestamp < modified_timestamp {
-        //         shader_sources_to_reload.push((handle, modified_timestamp));
-        //     }
-        // }
-        // for (handle, new_timestamp) in shader_sources_to_reload {
-        //     let _ = self.reload_shader_source(handle, new_timestamp);
-        // }
+        let mut shader_sources_to_reload = Vec::new();
+        for (handle, _) in self.iter_assets::<ShaderSource>() {
+            let Some(path) = self.asset_path(handle) else { continue };
+            let Ok(file_metadata) = std::fs::metadata(path) else { continue };
+            let Ok(modified_time) = file_metadata.modified() else { continue };
+            let modified_timestamp = Timestamp::from(modified_time);
+            if self.asset_timestamp(handle) < modified_timestamp {
+                shader_sources_to_reload.push(handle);
+            }
+        }
+        for handle in shader_sources_to_reload {
+            self.reload(handle);
+        }
     }
 
     pub(crate) fn asset_path<A: Asset>(&self, handle: Handle<A>) -> Option<&str> {
@@ -234,14 +251,14 @@ impl AssetServer {
         self.get_metadata_mut(handle).timestamp = timestamp;
     }
 
-    fn send_load_from_path_work<A: Asset + Loadable>(&self, handle: Handle<A>, path: &str) {
-        self.work_sender
-            .send(Work::LoadFromPath {
-                handle: handle.to_type_erased(),
-                loader: A::new_loader(),
-                path: path.to_owned(),
-            })
-            .unwrap();
+    fn finish_asset_reload<A: Asset>(&mut self, handle: Handle<A>) {
+        if TypeId::of::<A>() == TypeId::of::<Image>() {
+            self.changes.images.insert(unsafe { handle.transmute() });
+        } else if TypeId::of::<A>() == TypeId::of::<ShaderSource>() {
+            self.changes
+                .shader_sources
+                .insert(unsafe { handle.transmute() });
+        }
     }
 
     fn make_work_threads(
@@ -354,6 +371,10 @@ impl Metadata {
 
 pub trait Loader: Send {
     fn load_from_path(&self, path: &str) -> Result<Box<dyn Asset>, String>;
+
+    fn only_sync(&self) -> bool {
+        false
+    }
 }
 
 #[derive(Default)]
