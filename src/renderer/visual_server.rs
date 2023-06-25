@@ -1,6 +1,6 @@
 use std::collections::{hash_map::Entry, HashMap};
 
-use glam::{Affine3A, Mat4, UVec2, Vec3, Vec3Swizzles, Vec4};
+use glam::{Affine3A, Mat4, UVec2, Vec2, Vec3, Vec3Swizzles, Vec4};
 
 // TODO Find ways to reduce coupling between the renderer and the rest of the engine, to
 // eventually make it easy to extract in a separate crate (mostly in hopes of getting
@@ -12,7 +12,7 @@ use crate::{
 
 use super::{
     backend::Backend,
-    pipeline2d::Pipeline2d,
+    pipeline2d::{glyph_instance::GlyphInstance, Pipeline2d, RenderTextCommand},
     pipeline3d::{Pipeline3d, RenderMeshCommand},
 };
 
@@ -174,7 +174,15 @@ impl VisualServer {
         self.pipeline3d
             .render(&mut encoder, &render_mesh_commands, &self.render_target);
 
-        self.pipeline2d.render(&mut encoder, &self.render_target);
+        let mut render_text_commands = Vec::new();
+        for text in self.render_scene.texts.values() {
+            render_text_commands.push(RenderTextCommand {
+                instance_buffer: &text.instance_buffer,
+                instance_count: text.instance_count,
+            });
+        }
+        self.pipeline2d
+            .render(&mut encoder, &render_text_commands, &self.render_target);
 
         // FIXME: Strive to minimise the amount of submits across the board / submit as much work as possible
         // to reduce overhead / wasted GPU cycles. Right now there is two submits, one here and one in backend,
@@ -195,6 +203,32 @@ impl VisualServer {
         asset_server: &AssetServer,
     ) {
         self.register_mesh_instance(id, transform, mesh_handle, asset_server);
+    }
+
+    pub fn set_text(&mut self, id: UniqueNodeId, transform: &Affine3A, text: &str, size: f32) {
+        let offset = transform.translation.xy();
+        let glyphs = text
+            .as_bytes()
+            .iter()
+            .enumerate()
+            .map(|(i, &id)| {
+                let id = id.min(127);
+                GlyphInstance::new(
+                    offset + Vec2::new(i as f32 * size * 0.5, 0.0),
+                    Vec2::new(size * 1.1667 * 0.5, size),
+                    id,
+                )
+            })
+            .collect::<Vec<_>>();
+        let instance_buffer = self.backend.create_vertex_buffer(&glyphs);
+
+        self.render_scene.texts.insert(
+            id,
+            RenderText {
+                instance_buffer,
+                instance_count: glyphs.len() as u32,
+            },
+        );
     }
 
     pub fn reset_scene(&mut self) {
@@ -413,6 +447,12 @@ struct RenderScene {
     materials: HashMap<Handle<Material>, RenderMaterial>,
     textures: HashMap<Handle<Image>, wgpu::Texture>,
     mesh_instances: HashMap<UniqueNodeId, RenderMeshInstance>,
+    texts: HashMap<UniqueNodeId, RenderText>,
+}
+
+struct RenderText {
+    instance_buffer: wgpu::Buffer,
+    instance_count: u32,
 }
 
 struct RenderMesh {

@@ -75,6 +75,10 @@ impl Node {
         Self::with_data(NodeData::Scene(Box::new(scene)))
     }
 
+    pub fn new_text(text: impl Into<String>, size: f32) -> Self {
+        Self::with_data(NodeData::Text(text.into(), size))
+    }
+
     pub fn with_data(data: NodeData) -> Self {
         Self {
             transform: Default::default(),
@@ -100,4 +104,5 @@ pub enum NodeData {
     Camera(Camera),
     Mesh(Handle<Mesh>),
     Scene(Box<Scene>),
+    Text(String, f32),
 }

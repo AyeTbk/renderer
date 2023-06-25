@@ -120,6 +120,14 @@ impl Engine {
                     context,
                 );
             }
+            NodeData::Text(text, size) => {
+                context.visual_server.set_text(
+                    unique_node_id,
+                    &node.transform, // Not global!! Intended (for now)
+                    text,
+                    *size,
+                );
+            }
         }
 
         let children = scene.children_of(node_id).to_vec();

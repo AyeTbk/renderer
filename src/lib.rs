@@ -25,7 +25,7 @@ mod image;
 pub use crate::image::Image;
 
 mod scene;
-pub use scene::{Node, Scene};
+pub use scene::{Node, NodeData, Scene};
 
 mod camera;
 pub use camera::Camera;

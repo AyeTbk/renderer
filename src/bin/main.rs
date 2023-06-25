@@ -48,6 +48,12 @@ fn main() {
             .with_transform(Affine3A::from_rotation_y(-std::f32::consts::FRAC_PI_2)),
     );
 
+    eng.scene.add_allocate_child(
+        eng.scene.root,
+        Node::new_text("Hello text from scene!", 18.0)
+            .with_transform(Affine3A::from_translation(Vec3::new(20.0, 20.0, 0.0))),
+    );
+
     // Setup first person camera
     eng.scene.add_allocate_child(
         eng.scene.root,

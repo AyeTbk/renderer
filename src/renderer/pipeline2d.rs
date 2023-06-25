@@ -132,7 +132,6 @@ impl Pipeline2d {
                 )
             })
             .collect::<Vec<_>>();
-
         let instance_buffer = backend.create_vertex_buffer(&glyphs);
 
         let data = Pipeline2dData {
@@ -187,7 +186,12 @@ impl Pipeline2d {
         }
     }
 
-    pub fn render(&self, encoder: &mut CommandEncoder, render_target: &RenderTarget) {
+    pub fn render(
+        &self,
+        encoder: &mut CommandEncoder,
+        render_commands: &[RenderTextCommand],
+        render_target: &RenderTarget,
+    ) {
         let (color_attachment, _depth_stencil_attachment) = render_target.render_pass_attachments();
 
         let color_attachment = wgpu::RenderPassColorAttachment {
@@ -204,11 +208,13 @@ impl Pipeline2d {
             depth_stencil_attachment: None,
         });
 
-        render_pass.set_pipeline(&self.render_text_pipeline);
-        render_pass.set_bind_group(0, &self.data.viewport_bind_group, &[]);
-        render_pass.set_bind_group(1, &self.data.font_texture_bind_group, &[]);
-        render_pass.set_vertex_buffer(0, self.data.instance_buffer.slice(..));
-        render_pass.draw(0..4, 0..11);
+        for render_command in render_commands {
+            render_pass.set_pipeline(&self.render_text_pipeline);
+            render_pass.set_bind_group(0, &self.data.viewport_bind_group, &[]);
+            render_pass.set_bind_group(1, &self.data.font_texture_bind_group, &[]);
+            render_pass.set_vertex_buffer(0, render_command.instance_buffer.slice(..));
+            render_pass.draw(0..4, 0..render_command.instance_count);
+        }
     }
 
     fn rebuild_pipelines(&mut self, backend: &mut Backend) {
@@ -253,6 +259,11 @@ pub struct BindGroupLayouts {
 pub struct Shaders {
     pub render_text_source: Handle<ShaderSource>,
     pub render_text: wgpu::ShaderModule,
+}
+
+pub struct RenderTextCommand<'a> {
+    pub instance_buffer: &'a wgpu::Buffer,
+    pub instance_count: u32,
 }
 
 fn build_render_text_pipeline(
