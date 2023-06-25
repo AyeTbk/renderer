@@ -205,7 +205,7 @@ impl VisualServer {
         let mut textures_to_update = Vec::new();
         let mut materials_to_update = Vec::new();
 
-        for &changed_image_handle in &changes.images {
+        for changed_image_handle in changes.iter::<Image>() {
             if self
                 .render_scene
                 .textures

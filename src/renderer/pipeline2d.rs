@@ -40,9 +40,8 @@ impl Pipeline2d {
         backend: &mut Backend,
         asset_server: &mut AssetServer,
     ) -> Self {
-        let shader_source_handle = asset_server
-            .load_shader_source("src/renderer/shaders/text.wgsl")
-            .unwrap();
+        let shader_source_handle =
+            asset_server.load::<ShaderSource>("src/renderer/shaders/text.wgsl");
         let shader_source = asset_server.get(shader_source_handle);
         let shaders = Shaders {
             render_text_source: shader_source_handle,
@@ -179,10 +178,7 @@ impl Pipeline2d {
         backend: &mut Backend,
         asset_server: &mut AssetServer,
     ) {
-        if changes
-            .shader_sources
-            .contains(&self.data.shaders.render_text_source)
-        {
+        if changes.contains(self.data.shaders.render_text_source) {
             let source = asset_server.get(self.data.shaders.render_text_source);
             self.data.shaders.render_text =
                 backend.create_shader_module("render text shader", source.source());

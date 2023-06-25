@@ -115,13 +115,6 @@ impl AssetServer {
         gltf::GtlfLoader::new(path, self)?.load()
     }
 
-    pub fn load_shader_source(&mut self, path: &str) -> Result<Handle<ShaderSource>, String> {
-        let shader_source = ShaderSource::load_from_path(path)?;
-        let handle = self.add(shader_source);
-        self.set_asset_path(handle, path);
-        Ok(handle)
-    }
-
     pub fn take_asset_changes(&mut self) -> AssetChanges {
         std::mem::take(&mut self.changes)
     }
@@ -177,7 +170,6 @@ impl AssetServer {
     }
 
     fn set_asset(&mut self, handle: TypeErasedHandle, asset: Box<dyn Asset>) {
-        // TODO notify changes
         let generic_handle = unsafe { handle.transmute() };
         let slot = self
             .arenas
@@ -200,8 +192,6 @@ impl AssetServer {
     }
 
     fn check_for_file_changes(&mut self) {
-        // TODO this
-
         let mut images_to_reload = Vec::new();
         for (handle, _) in self.iter_assets::<Image>() {
             let Some(path) = self.asset_path(handle) else { continue };
@@ -252,13 +242,7 @@ impl AssetServer {
     }
 
     fn finish_asset_reload<A: Asset>(&mut self, handle: Handle<A>) {
-        if TypeId::of::<A>() == TypeId::of::<Image>() {
-            self.changes.images.insert(unsafe { handle.transmute() });
-        } else if TypeId::of::<A>() == TypeId::of::<ShaderSource>() {
-            self.changes
-                .shader_sources
-                .insert(unsafe { handle.transmute() });
-        }
+        self.changes.assets.insert(handle.to_type_erased());
     }
 
     fn make_work_threads(
@@ -377,12 +361,6 @@ pub trait Loader: Send {
     }
 }
 
-#[derive(Default)]
-pub struct AssetChanges {
-    pub images: HashSet<Handle<Image>>,
-    pub shader_sources: HashSet<Handle<ShaderSource>>,
-}
-
 enum Work {
     Terminate,
     LoadFromPath {
@@ -393,3 +371,20 @@ enum Work {
 }
 
 type WorkResult = (TypeErasedHandle, Result<Box<dyn Asset>, String>);
+
+#[derive(Default)]
+pub struct AssetChanges {
+    pub assets: HashSet<TypeErasedHandle>,
+}
+
+impl AssetChanges {
+    pub fn iter<A: Asset>(&self) -> impl Iterator<Item = Handle<A>> + '_ {
+        self.assets
+            .iter()
+            .filter_map(|type_erased_handle| type_erased_handle.downcast().ok())
+    }
+
+    pub fn contains<A: Asset>(&self, handle: Handle<A>) -> bool {
+        self.assets.contains(&handle.to_type_erased())
+    }
+}

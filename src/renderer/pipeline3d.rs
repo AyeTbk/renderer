@@ -36,9 +36,8 @@ impl Pipeline3d {
         backend: &mut Backend,
         asset_server: &mut AssetServer,
     ) -> Self {
-        let shader_source_handle = asset_server
-            .load_shader_source("src/renderer/shaders/shader.wgsl")
-            .unwrap();
+        let shader_source_handle =
+            asset_server.load::<ShaderSource>("src/renderer/shaders/shader.wgsl");
         let shader_source = asset_server.get(shader_source_handle);
         let shaders = Shaders {
             render_meshes_source: shader_source_handle,
@@ -165,10 +164,7 @@ impl Pipeline3d {
         backend: &mut Backend,
         asset_server: &mut AssetServer,
     ) {
-        if changes
-            .shader_sources
-            .contains(&self.data.shaders.render_meshes_source)
-        {
+        if changes.contains(self.data.shaders.render_meshes_source) {
             let source = asset_server.get(self.data.shaders.render_meshes_source);
             self.data.shaders.render_meshes =
                 backend.create_shader_module("render meshes shader", source.source());
