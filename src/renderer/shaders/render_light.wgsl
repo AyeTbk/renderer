@@ -43,20 +43,39 @@ fn fs_main_blinn_phong(in: VertexOutput) -> @location(0) vec4f {
     }
 
     let from_frag_to_view_dir = normalize(scene.view_pos.xyz - in.frag_pos);
-    let blinn_phong = compute_directional_light_blinn_phong(
-        base_color.rgb,
-        normal,
-        from_frag_to_view_dir,
-        light.transform.z.xyz,
-        light.color.rgb,
-        light.color.a,
-        8.0,
-    );
+    var light_contribution = vec3f(0.0);
+    if light.kind == 0u {
+        light_contribution = compute_light_blinn_phong(
+            base_color.rgb,
+            normal,
+            from_frag_to_view_dir,
+            light.transform.z.xyz,
+            light.color.rgb,
+            light.color.a,
+            8.0,
+        );
+    } else if light.kind == 1u {
+        let distance = distance(in.frag_pos, light.transform.w.xyz);
+        if distance > light.radius {
+            discard;
+        }
+        let light_direction = normalize(in.frag_pos - light.transform.w.xyz);
+        let attenuation = compute_light_attenuation(distance, light.radius);
+        light_contribution = compute_light_blinn_phong(
+            base_color.rgb,
+            normal,
+            from_frag_to_view_dir,
+            light_direction,
+            light.color.rgb,
+            light.color.a * attenuation,
+            8.0,
+        );
+    }
 
-    return vec4f(blinn_phong, 1.0);
+    return vec4f(light_contribution, 1.0);
 }
 
-fn compute_directional_light_blinn_phong(
+fn compute_light_blinn_phong(
     base_color: vec3f,
     normal: vec3f,
     from_frag_to_view_dir: vec3f,
@@ -76,4 +95,9 @@ fn compute_directional_light_blinn_phong(
     let spec = light_color * light_intensity * spec_intensity;
 
     return base_color * (diffuse + spec);
+}
+
+fn compute_light_attenuation(distance: f32, max_distance: f32) -> f32 {
+    let linear_attenuation = clamp((max_distance - distance) / max_distance, 0.0, 1.0);
+    return smoothstep(0.0, 1.0, linear_attenuation);
 }

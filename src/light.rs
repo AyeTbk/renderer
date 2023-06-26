@@ -20,6 +20,13 @@ impl Light {
         }
     }
 
+    pub fn point(radius: f32) -> Self {
+        Self {
+            kind: LightKind::Point { radius },
+            ..Default::default()
+        }
+    }
+
     pub fn with_color(mut self, color: Color) -> Self {
         self.color = color;
         self
