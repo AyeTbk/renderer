@@ -1,19 +1,19 @@
 use std::collections::{hash_map::Entry, HashMap};
 
-use glam::{Affine3A, Mat4, UVec2, Vec2, Vec3, Vec3Swizzles, Vec4};
+use glam::{Affine3A, Mat4, UVec2, Vec2, Vec3Swizzles, Vec4};
 
 // TODO Find ways to reduce coupling between the renderer and the rest of the engine, to
 // eventually make it easy to extract in a separate crate (mostly in hopes of getting
 // better compile times). This goes for AssetServer too, I guess.
 use crate::{
-    arena::Handle, asset_server::AssetChanges, image::Image, scene::UniqueNodeId, AssetServer,
-    Camera, Color, Material, Mesh,
+    arena::Handle, asset_server::AssetChanges, image::Image, light::LightKind, scene::UniqueNodeId,
+    AssetServer, Camera, Color, Light, Material, Mesh,
 };
 
 use super::{
     backend::Backend,
     pipeline2d::{glyph_instance::GlyphInstance, Pipeline2d, RenderTextCommand},
-    pipeline3d::{Pipeline3d, RenderMeshCommand},
+    pipeline3d::{Pipeline3d, RenderCommandLight, RenderCommandMesh, RenderCommands},
 };
 
 pub struct VisualServer {
@@ -44,12 +44,7 @@ impl VisualServer {
         let scene_uniform = SceneUniform {
             projection_view: Camera::default().projection_matrix().to_cols_array(),
             view_pos: Vec4::default().to_array(),
-            ambient_light: Color::new(0.3, 0.5, 0.9, 0.05).to_array(),
-            sun_color: Color::new(1.0, 0.9, 0.8, 1.0).to_array(),
-            sun_direction: Vec3::new(0.1, -1.0, 0.4)
-                .normalize_or_zero()
-                .xyzz()
-                .to_array(),
+            ambient_light: Color::new(0.3, 0.5, 0.9, 0.04).to_array(),
         };
         let render_scene_data = RenderSceneData {
             uniform: scene_uniform,
@@ -147,14 +142,14 @@ impl VisualServer {
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
-        let mut render_mesh_commands = Vec::new();
+        let mut render_commands_meshes = Vec::new();
 
         for mesh_instance in self.render_scene.mesh_instances.values() {
             let mesh = self.render_scene.meshes.get(&mesh_instance.mesh).unwrap();
 
             for submesh in &mesh.submeshes {
                 let material = self.render_scene.materials.get(&submesh.material).unwrap();
-                render_mesh_commands.push(RenderMeshCommand {
+                render_commands_meshes.push(RenderCommandMesh {
                     material_bind_group: &material.bind_group,
                     model_bind_group: &mesh_instance.model_bind_group,
                     vertex_buffer: &submesh.vertex_buffer,
@@ -164,6 +159,18 @@ impl VisualServer {
             }
         }
 
+        let mut render_commands_lights = Vec::new();
+        for light in self.render_scene.lights.values() {
+            render_commands_lights.push(RenderCommandLight {
+                bind_group: &light.bind_group,
+            });
+        }
+
+        let commands = RenderCommands {
+            meshes: &render_commands_meshes,
+            lights: &render_commands_lights,
+        };
+
         let mut encoder =
             self.backend
                 .device
@@ -172,7 +179,7 @@ impl VisualServer {
                 });
 
         self.pipeline3d
-            .render(&mut encoder, &render_mesh_commands, &self.render_target);
+            .render(&mut encoder, &commands, &self.render_target);
 
         let mut render_text_commands = Vec::new();
         for text in self.render_scene.texts.values() {
@@ -195,6 +202,31 @@ impl VisualServer {
         Ok(())
     }
 
+    pub fn set_light(&mut self, id: UniqueNodeId, transform: Affine3A, light: &Light) {
+        let kind = match &light.kind {
+            LightKind::Directional { .. } => 0,
+            LightKind::Point { .. } => 1,
+        };
+
+        let uniform = LightUniform {
+            transform: Mat4::from(transform).to_cols_array(),
+            color: light.color.to_array(),
+            radius: light.radius().unwrap_or_default(),
+            kind,
+            _padding: [0.0, 0.0],
+        };
+        let uniform_buffer = self.backend.create_uniform_buffer(uniform);
+        let bind_group = self.backend.create_light_bind_group(&uniform_buffer);
+
+        self.render_scene.lights.insert(
+            id,
+            RenderLight {
+                uniform_buffer,
+                bind_group,
+            },
+        );
+    }
+
     pub fn set_mesh_instance(
         &mut self,
         id: UniqueNodeId,
@@ -202,7 +234,22 @@ impl VisualServer {
         mesh_handle: Handle<Mesh>,
         asset_server: &AssetServer,
     ) {
-        self.register_mesh_instance(id, transform, mesh_handle, asset_server);
+        self.register_mesh(mesh_handle, asset_server);
+
+        let model_uniform = ModelUniform {
+            transform: Mat4::from(transform).to_cols_array(),
+        };
+        let model_uniform_buffer = self.backend.create_uniform_buffer(model_uniform);
+        let model_bind_group = self.backend.create_model_bind_group(&model_uniform_buffer);
+
+        self.render_scene.mesh_instances.insert(
+            id,
+            RenderMeshInstance {
+                model_uniform_buffer,
+                model_bind_group,
+                mesh: mesh_handle,
+            },
+        );
     }
 
     pub fn set_text(&mut self, id: UniqueNodeId, transform: &Affine3A, text: &[u8], size: f32) {
@@ -295,31 +342,6 @@ impl VisualServer {
             .update_render_target_info(self.render_target.info(), &mut self.backend);
         self.pipeline2d
             .update_render_target_info(self.render_target.info(), &mut self.backend);
-    }
-
-    fn register_mesh_instance(
-        &mut self,
-        id: UniqueNodeId,
-        transform: Affine3A,
-        handle: Handle<Mesh>,
-        asset_server: &AssetServer,
-    ) {
-        self.register_mesh(handle, asset_server);
-
-        let model_uniform = ModelUniform {
-            transform: Mat4::from(transform).to_cols_array(),
-        };
-        let model_uniform_buffer = self.backend.create_uniform_buffer(model_uniform);
-        let model_bind_group = self.backend.create_model_bind_group(&model_uniform_buffer);
-
-        self.render_scene.mesh_instances.insert(
-            id,
-            RenderMeshInstance {
-                model_uniform_buffer,
-                model_bind_group,
-                mesh: handle,
-            },
-        );
     }
 
     fn register_mesh(&mut self, handle: Handle<Mesh>, asset_server: &AssetServer) {
@@ -436,8 +458,6 @@ struct SceneUniform {
     projection_view: [f32; 16],
     view_pos: [f32; 4],
     ambient_light: [f32; 4],
-    sun_color: [f32; 4],
-    sun_direction: [f32; 4],
 }
 
 #[derive(Default)]
@@ -445,6 +465,7 @@ struct RenderScene {
     meshes: HashMap<Handle<Mesh>, RenderMesh>,
     materials: HashMap<Handle<Material>, RenderMaterial>,
     textures: HashMap<Handle<Image>, wgpu::Texture>,
+    lights: HashMap<UniqueNodeId, RenderLight>,
     mesh_instances: HashMap<UniqueNodeId, RenderMeshInstance>,
     texts: HashMap<UniqueNodeId, RenderText>,
 }
@@ -452,6 +473,12 @@ struct RenderScene {
 struct RenderText {
     instance_buffer: wgpu::Buffer,
     instance_count: u32,
+}
+
+struct RenderLight {
+    bind_group: wgpu::BindGroup,
+    #[allow(unused)]
+    uniform_buffer: wgpu::Buffer,
 }
 
 struct RenderMesh {
@@ -492,6 +519,16 @@ struct RenderMaterial {
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct MaterialUniform {
     base_color: [f32; 4],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct LightUniform {
+    transform: [f32; 16],
+    color: [f32; 4],
+    radius: f32,
+    kind: u32, // Directional=0, Point=1
+    _padding: [f32; 2],
 }
 
 pub struct RenderTarget {

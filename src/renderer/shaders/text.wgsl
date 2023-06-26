@@ -78,7 +78,7 @@ fn fs_signed_distance_field(in: VertexOutput) -> vec4f {
     // instead of hand picking them.
     let fill_smoothcenter = 0.3;
     let outline_smoothcenter = 0.7;
-    let smoothing = 0.15;
+    let smoothing = 0.2;
 
     let sd = textureSample(font_atlas, tex_sampler, in.uv);
     

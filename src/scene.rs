@@ -5,7 +5,7 @@ use glam::Affine3A;
 use crate::{
     arena::{Arena, Handle},
     engine::Context,
-    Camera, Mesh,
+    Camera, Light, Mesh,
 };
 
 pub type NodeId = Handle<Node>;
@@ -67,6 +67,10 @@ impl Node {
         Self::with_data(NodeData::Camera(camera))
     }
 
+    pub fn new_light(light: Light) -> Self {
+        Self::with_data(NodeData::Light(light))
+    }
+
     pub fn new_mesh(mesh: Handle<Mesh>) -> Self {
         Self::with_data(NodeData::Mesh(mesh))
     }
@@ -102,6 +106,7 @@ impl Node {
 pub enum NodeData {
     Empty,
     Camera(Camera),
+    Light(Light),
     Mesh(Handle<Mesh>),
     Scene(Box<Scene>),
     Text(Vec<u8>, f32),

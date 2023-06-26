@@ -1,0 +1,79 @@
+struct SceneUniform {
+    projection_view: mat4x4f,
+    view_pos: vec4f,
+    ambient_light: vec4f,
+};
+@group(0) @binding(0)
+var<uniform> scene: SceneUniform;
+
+struct VertexOutput {
+    @builtin(position) @invariant clip_position: vec4f, // @invariant is necessary because lighting pipelines want to compare if depth is equal.
+    @location(0) frag_pos: vec3f,
+    @location(1) normal: vec3f,
+    @location(2) uv: vec2f,
+};
+
+struct MaterialUniform {
+    base_color: vec4f,
+};
+@group(1) @binding(0)
+var<uniform> material: MaterialUniform;
+@group(1) @binding(1)
+var base_color_texture: texture_2d<f32>;
+@group(1) @binding(2)
+var material_sampler: sampler;
+
+struct LightUniform {
+    transform: mat4x4f,
+    color: vec4f,
+    radius: f32,
+    kind: u32, // Directional=0, Point=1
+};
+@group(3) @binding(0)
+var<uniform> light: LightUniform;
+
+
+@fragment
+fn fs_main_blinn_phong(in: VertexOutput) -> @location(0) vec4f {
+    let normal = normalize(in.normal);
+    let base_color = material.base_color.rgba * textureSample(base_color_texture, material_sampler, in.uv).rgba;
+    
+    if base_color.a < 0.5 {
+        discard;
+    }
+
+    let from_frag_to_view_dir = normalize(scene.view_pos.xyz - in.frag_pos);
+    let blinn_phong = compute_directional_light_blinn_phong(
+        base_color.rgb,
+        normal,
+        from_frag_to_view_dir,
+        light.transform.z.xyz,
+        light.color.rgb,
+        light.color.a,
+        8.0,
+    );
+
+    return vec4f(blinn_phong, 1.0);
+}
+
+fn compute_directional_light_blinn_phong(
+    base_color: vec3f,
+    normal: vec3f,
+    from_frag_to_view_dir: vec3f,
+    light_dir: vec3f,
+    light_color: vec3f,
+    light_intensity: f32,
+    shininess: f32,
+) -> vec3f {
+    // Diffuse
+    let from_frag_to_light_dir = -light_dir;
+    let diffuse_intensity = max(dot(normal, from_frag_to_light_dir), 0.0);
+    let diffuse = light_color * light_intensity * diffuse_intensity;
+
+    // Specular
+    let halfway_dir = normalize(from_frag_to_light_dir + from_frag_to_view_dir);
+    let spec_intensity = pow(max(dot(normal, halfway_dir), 0.0), shininess);
+    let spec = light_color * light_intensity * spec_intensity;
+
+    return base_color * (diffuse + spec);
+}

@@ -2,8 +2,6 @@ struct SceneUniform {
     projection_view: mat4x4f,
     view_pos: vec4f,
     ambient_light: vec4f,
-    sun_color: vec4f,
-    sun_dir: vec4f,
 };
 @group(0) @binding(0)
 var<uniform> scene: SceneUniform;
@@ -21,7 +19,7 @@ struct VertexInput {
 };
 
 struct VertexOutput {
-    @builtin(position) clip_position: vec4f,
+    @builtin(position) @invariant clip_position: vec4f, // @invariant is necessary because lighting pipelines want to compare if depth is equal.
     @location(0) frag_pos: vec3f,
     @location(1) normal: vec3f,
     @location(2) uv: vec2f,
@@ -58,32 +56,25 @@ var base_color_texture: texture_2d<f32>;
 var material_sampler: sampler;
 
 
+
 @fragment
-fn fs_main(in: VertexOutput) -> @location(0) vec4f {
+fn fs_main_ambient_light_depth_prepass(in: VertexOutput) -> @location(0) vec4f {
     let normal = normalize(in.normal);
-
     let base_color = material.base_color.rgba * textureSample(base_color_texture, material_sampler, in.uv).rgba;
-
+    
     if base_color.a < 0.5 {
         discard;
     }
 
-    let ambient_light = scene.ambient_light.rgb * scene.ambient_light.a;
- 
-    // Sun light (blinn-phong)
-    let from_frag_to_light_dir = -scene.sun_dir.xyz;
-    let sun_diffuse_intensity = max(dot(normal, from_frag_to_light_dir), 0.0);
-    let sun_diffuse = scene.sun_color.rgb * scene.sun_color.a * sun_diffuse_intensity;
+    let ambient_light = compute_ambient_light(
+        base_color.rgb,
+        scene.ambient_light.rgb,
+        scene.ambient_light.a,
+    );
 
-    let shininess = 8.0;
-    let from_frag_to_view_dir = normalize(scene.view_pos.xyz - in.frag_pos);
-    let halfway_dir = normalize(from_frag_to_light_dir + from_frag_to_view_dir);
-    let sun_spec_intensity = pow(max(dot(normal, halfway_dir), 0.0), shininess);
-    let sun_spec = scene.sun_color.rgb * scene.sun_color.a * sun_spec_intensity;
-    
-    let sun_light = sun_diffuse + sun_spec;
+    return vec4f(ambient_light, base_color.a);
+}
 
-    let color = (ambient_light + sun_light) * base_color.rgb;
-    
-    return vec4f(color, base_color.a);
+fn compute_ambient_light(base_color: vec3f, light_color: vec3f, light_intensity: f32) -> vec3f {
+    return base_color * (light_color * light_intensity);
 }

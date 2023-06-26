@@ -98,6 +98,17 @@ impl Engine {
 
         match &mut node.data {
             NodeData::Empty => (),
+            NodeData::Camera(camera) => {
+                camera.aspect_ratio = context.display.window_aspect_ratio();
+                context
+                    .visual_server
+                    .set_camera(&node_global_transform, camera);
+            }
+            NodeData::Light(light) => {
+                context
+                    .visual_server
+                    .set_light(unique_node_id, node_global_transform, light);
+            }
             NodeData::Mesh(mesh_handle) => {
                 context.visual_server.set_mesh_instance(
                     unique_node_id,
@@ -105,12 +116,6 @@ impl Engine {
                     *mesh_handle,
                     context.asset_server,
                 );
-            }
-            NodeData::Camera(camera) => {
-                camera.aspect_ratio = context.display.window_aspect_ratio();
-                context
-                    .visual_server
-                    .set_camera(&node_global_transform, camera);
             }
             NodeData::Scene(subscene) => {
                 Self::update_node_recursive(

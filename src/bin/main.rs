@@ -1,6 +1,6 @@
 use asset_image::Image;
 use glam::{Affine3A, Mat3A, Quat, UVec2, Vec2, Vec3, Vec3A};
-use renderer::{Engine, Node};
+use renderer::{Color, Engine, Light, Node};
 use winit::{
     dpi::PhysicalSize,
     event::{DeviceEvent, ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent},
@@ -52,6 +52,27 @@ fn main() {
         eng.scene.root,
         Node::new_text("Hello text from scene!", 18.0)
             .with_transform(Affine3A::from_translation(Vec3::new(20.0, 20.0, 0.0))),
+    );
+    eng.scene.add_allocate_child(
+        eng.scene.root,
+        Node::new_text("wow many texts.", 18.0)
+            .with_transform(Affine3A::from_translation(Vec3::new(20.0, 40.0, 0.0))),
+    );
+
+    // Lights
+    eng.scene.add_allocate_child(
+        eng.scene.root,
+        Node::new_light(Light::directional().with_color(Color::new(1.0, 0.9, 0.8, 1.0)))
+            .with_transform(
+                Affine3A::look_to_lh(Vec3::ZERO, Vec3::new(0.1, -1.0, 0.4), Vec3::Y).inverse(),
+            ),
+    );
+    eng.scene.add_allocate_child(
+        eng.scene.root,
+        Node::new_light(Light::directional().with_color(Color::new(1.0, 0.0, 0.0, 1.0)))
+            .with_transform(
+                Affine3A::look_to_lh(Vec3::ZERO, Vec3::new(0.1, -1.0, -0.9), Vec3::Y).inverse(),
+            ),
     );
 
     // Setup first person camera

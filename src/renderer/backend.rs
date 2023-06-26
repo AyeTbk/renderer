@@ -24,6 +24,7 @@ pub struct Backend {
     //
     material_bind_group_layout: wgpu::BindGroupLayout,
     model_bind_group_layout: wgpu::BindGroupLayout,
+    light_bind_group_layout: wgpu::BindGroupLayout,
 }
 
 impl Backend {
@@ -133,6 +134,20 @@ impl Backend {
                     count: None,
                 }],
             });
+        let light_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("light bind group layout"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
 
         let show_texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -229,6 +244,7 @@ impl Backend {
             show_texture_uniform_buffer,
             material_bind_group_layout,
             model_bind_group_layout,
+            light_bind_group_layout,
         }
     }
 
@@ -330,6 +346,17 @@ impl Backend {
         self.device.create_bind_group(&BindGroupDescriptor {
             label: Some("model bind group"),
             layout: &self.model_bind_group_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: uniform_buffer.as_entire_binding(),
+            }],
+        })
+    }
+
+    pub fn create_light_bind_group(&mut self, uniform_buffer: &wgpu::Buffer) -> wgpu::BindGroup {
+        self.device.create_bind_group(&BindGroupDescriptor {
+            label: Some("light bind group"),
+            layout: &self.light_bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
                 resource: uniform_buffer.as_entire_binding(),

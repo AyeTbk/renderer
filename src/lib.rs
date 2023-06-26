@@ -30,5 +30,8 @@ pub use scene::{Node, NodeData, Scene};
 mod camera;
 pub use camera::Camera;
 
+mod light;
+pub use light::Light;
+
 mod input;
 pub use input::Input;

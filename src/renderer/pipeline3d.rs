@@ -13,20 +13,17 @@ use super::{
 };
 
 pub struct Pipeline3d {
-    steps: Vec<Step>,
+    pipelines: Pipelines,
     data: Pipeline3dData,
 }
 
 pub struct Pipeline3dData {
-    pub scene_bind_group: wgpu::BindGroup,
-    pub render_target_info: RenderTargetInfo,
-    pub pipeline_layouts: PipelineLayouts,
-    pub bind_group_layouts: BindGroupLayouts,
-    pub shaders: Shaders,
-}
-
-pub struct Step {
-    pub pipeline: wgpu::RenderPipeline,
+    scene_bind_group: wgpu::BindGroup,
+    render_target_info: RenderTargetInfo,
+    pipeline_layouts: PipelineLayouts,
+    #[allow(unused)]
+    bind_group_layouts: BindGroupLayouts,
+    shaders: Shaders,
 }
 
 impl Pipeline3d {
@@ -36,13 +33,22 @@ impl Pipeline3d {
         backend: &mut Backend,
         asset_server: &mut AssetServer,
     ) -> Self {
-        let shader_source_handle =
-            asset_server.load::<ShaderSource>("src/renderer/shaders/shader.wgsl");
-        let shader_source = asset_server.get(shader_source_handle);
+        let render_mesh_shader_source_handle =
+            asset_server.load::<ShaderSource>("src/renderer/shaders/render_mesh.wgsl");
+        let render_mesh_shader_source = asset_server
+            .get(render_mesh_shader_source_handle)
+            .source()
+            .to_string();
+        let render_light_shader_source_handle =
+            asset_server.load::<ShaderSource>("src/renderer/shaders/render_light.wgsl");
+        let render_light_shader_source = asset_server.get(render_light_shader_source_handle);
         let shaders = Shaders {
-            render_meshes_source: shader_source_handle,
-            render_meshes: backend
-                .create_shader_module("render meshes shader", shader_source.source()),
+            render_mesh_source: render_mesh_shader_source_handle,
+            render_mesh: backend
+                .create_shader_module("render mesh shader", &render_mesh_shader_source),
+            render_light_source: render_light_shader_source_handle,
+            render_light: backend
+                .create_shader_module("render light shader", render_light_shader_source.source()),
         };
 
         let bind_group_layouts = BindGroupLayouts {
@@ -109,17 +115,44 @@ impl Pipeline3d {
                         count: None,
                     }],
                 }),
+            light: backend
+                .device
+                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                    label: Some("light bind group layout"),
+                    entries: &[wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    }],
+                }),
         };
 
         let pipeline_layouts = PipelineLayouts {
-            render_meshes: backend
-                .device
-                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: Some("render meshes pipeline layout"),
+            ambient_light_depth_prepass: backend.device.create_pipeline_layout(
+                &wgpu::PipelineLayoutDescriptor {
+                    label: Some("ambient_light_depth_prepass pipeline layout"),
                     bind_group_layouts: &[
                         &bind_group_layouts.scene,
                         &bind_group_layouts.material,
                         &bind_group_layouts.model,
+                    ],
+                    push_constant_ranges: &[],
+                },
+            ),
+            light: backend
+                .device
+                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("light pipeline layout"),
+                    bind_group_layouts: &[
+                        &bind_group_layouts.scene,
+                        &bind_group_layouts.material,
+                        &bind_group_layouts.model,
+                        &bind_group_layouts.light,
                     ],
                     push_constant_ranges: &[],
                 }),
@@ -144,9 +177,9 @@ impl Pipeline3d {
             shaders,
         };
 
-        let steps = Self::build_steps(&data, backend);
+        let pipelines = Self::build_pipelines(&data, backend);
 
-        Self { steps, data }
+        Self { pipelines, data }
     }
 
     pub fn update_render_target_info(
@@ -155,7 +188,7 @@ impl Pipeline3d {
         backend: &mut Backend,
     ) {
         self.data.render_target_info = render_target_info;
-        self.rebuild_steps(backend);
+        self.rebuild_pipelines(backend);
     }
 
     pub fn notify_asset_changes(
@@ -164,19 +197,27 @@ impl Pipeline3d {
         backend: &mut Backend,
         asset_server: &mut AssetServer,
     ) {
-        if changes.contains(self.data.shaders.render_meshes_source) {
-            let source = asset_server.get(self.data.shaders.render_meshes_source);
-            self.data.shaders.render_meshes =
-                backend.create_shader_module("render meshes shader", source.source());
+        if changes.contains(self.data.shaders.render_mesh_source) {
+            let source = asset_server.get(self.data.shaders.render_mesh_source);
+            self.data.shaders.render_mesh =
+                backend.create_shader_module("render mesh shader", source.source());
 
-            self.rebuild_steps(backend);
+            self.rebuild_pipelines(backend);
+        }
+
+        if changes.contains(self.data.shaders.render_light_source) {
+            let source = asset_server.get(self.data.shaders.render_light_source);
+            self.data.shaders.render_light =
+                backend.create_shader_module("render light shader", source.source());
+
+            self.rebuild_pipelines(backend);
         }
     }
 
     pub fn render(
         &self,
         encoder: &mut CommandEncoder,
-        render_commands: &[RenderMeshCommand],
+        render_commands: &RenderCommands,
         render_target: &RenderTarget,
     ) {
         let (color_attachment, depth_stencil_attachment) = render_target.render_pass_attachments();
@@ -187,53 +228,92 @@ impl Pipeline3d {
             depth_stencil_attachment: Some(depth_stencil_attachment),
         });
 
-        for step in &self.steps {
-            render_pass.set_pipeline(&step.pipeline);
-            render_pass.set_bind_group(0, &self.data.scene_bind_group, &[]);
+        // Ambient and depth
+        render_pass.set_pipeline(&self.pipelines.ambient_light_depth_prepass);
+        render_pass.set_bind_group(0, &self.data.scene_bind_group, &[]);
 
-            for render_command in render_commands {
-                let RenderMeshCommand {
-                    material_bind_group,
-                    model_bind_group,
-                    vertex_buffer,
-                    index_buffer,
-                    index_count,
-                } = render_command;
+        for mesh in render_commands.meshes {
+            let RenderCommandMesh {
+                material_bind_group,
+                model_bind_group,
+                vertex_buffer,
+                index_buffer,
+                index_count,
+            } = mesh;
 
-                render_pass.set_bind_group(1, material_bind_group, &[]);
-                render_pass.set_bind_group(2, model_bind_group, &[]);
-                render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-                render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+            render_pass.set_bind_group(1, material_bind_group, &[]);
+            render_pass.set_bind_group(2, model_bind_group, &[]);
+            render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+            render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+            render_pass.draw_indexed(0..*index_count, 0, 0..1);
+        }
+
+        // Lights
+        render_pass.set_pipeline(&self.pipelines.light);
+
+        for mesh in render_commands.meshes {
+            let RenderCommandMesh {
+                material_bind_group,
+                model_bind_group,
+                vertex_buffer,
+                index_buffer,
+                index_count,
+            } = mesh;
+
+            render_pass.set_bind_group(1, material_bind_group, &[]);
+            render_pass.set_bind_group(2, model_bind_group, &[]);
+            render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+            render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+
+            for light in render_commands.lights {
+                render_pass.set_bind_group(3, light.bind_group, &[]);
                 render_pass.draw_indexed(0..*index_count, 0, 0..1);
             }
         }
     }
 
-    fn rebuild_steps(&mut self, backend: &mut Backend) {
-        self.steps = Self::build_steps(&self.data, backend);
+    fn rebuild_pipelines(&mut self, backend: &mut Backend) {
+        self.pipelines = Self::build_pipelines(&self.data, backend);
     }
 
-    fn build_steps(data: &Pipeline3dData, backend: &mut Backend) -> Vec<Step> {
-        vec![build_render_meshes_step(data, backend)]
+    fn build_pipelines(data: &Pipeline3dData, backend: &mut Backend) -> Pipelines {
+        Pipelines {
+            ambient_light_depth_prepass: build_pipeline_ambient_light_depth_prepass(data, backend),
+            light: build_pipeline_light(data, backend),
+        }
     }
 }
 
-pub struct PipelineLayouts {
-    pub render_meshes: wgpu::PipelineLayout,
+struct PipelineLayouts {
+    pub ambient_light_depth_prepass: wgpu::PipelineLayout,
+    pub light: wgpu::PipelineLayout,
 }
 
-pub struct BindGroupLayouts {
+struct Pipelines {
+    pub ambient_light_depth_prepass: wgpu::RenderPipeline,
+    pub light: wgpu::RenderPipeline,
+}
+
+struct BindGroupLayouts {
     pub scene: wgpu::BindGroupLayout,
     pub material: wgpu::BindGroupLayout,
     pub model: wgpu::BindGroupLayout,
+    pub light: wgpu::BindGroupLayout,
 }
 
-pub struct Shaders {
-    pub render_meshes_source: Handle<ShaderSource>,
-    pub render_meshes: wgpu::ShaderModule,
+struct Shaders {
+    pub render_mesh_source: Handle<ShaderSource>,
+    pub render_mesh: wgpu::ShaderModule,
+    pub render_light_source: Handle<ShaderSource>,
+    pub render_light: wgpu::ShaderModule,
 }
 
-pub struct RenderMeshCommand<'a> {
+pub struct RenderCommands<'a> {
+    pub meshes: &'a [RenderCommandMesh<'a>],
+    pub lights: &'a [RenderCommandLight<'a>],
+}
+
+pub struct RenderCommandMesh<'a> {
     pub material_bind_group: &'a wgpu::BindGroup,
     pub model_bind_group: &'a wgpu::BindGroup,
     pub vertex_buffer: &'a wgpu::Buffer,
@@ -241,47 +321,114 @@ pub struct RenderMeshCommand<'a> {
     pub index_count: u32,
 }
 
-fn build_render_meshes_step(pipeline_data: &Pipeline3dData, backend: &mut Backend) -> Step {
-    Step {
-        pipeline: backend
-            .device
-            .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("render meshes pipeline"),
-                layout: Some(&pipeline_data.pipeline_layouts.render_meshes),
-                vertex: wgpu::VertexState {
-                    module: &pipeline_data.shaders.render_meshes,
-                    entry_point: "vs_main",
-                    buffers: &[Vertex::buffer_layout()],
-                },
-                fragment: Some(wgpu::FragmentState {
-                    module: &pipeline_data.shaders.render_meshes,
-                    entry_point: "fs_main",
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format: pipeline_data.render_target_info.color_format,
-                        blend: Some(wgpu::BlendState::REPLACE),
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })],
-                }),
-                primitive: wgpu::PrimitiveState {
-                    topology: wgpu::PrimitiveTopology::TriangleList,
-                    strip_index_format: None,
-                    front_face: wgpu::FrontFace::Ccw,
-                    cull_mode: Some(wgpu::Face::Back),
-                    ..Default::default()
-                },
-                depth_stencil: Some(wgpu::DepthStencilState {
-                    format: pipeline_data.render_target_info.depth_format,
-                    depth_write_enabled: true,
-                    depth_compare: wgpu::CompareFunction::Less,
-                    stencil: wgpu::StencilState::default(),
-                    bias: wgpu::DepthBiasState::default(),
-                }),
-                multisample: wgpu::MultisampleState {
-                    count: pipeline_data.render_target_info.sample_count,
-                    mask: !0,
-                    alpha_to_coverage_enabled: false,
-                },
-                multiview: None,
-            }),
-    }
+pub struct RenderCommandLight<'a> {
+    pub bind_group: &'a wgpu::BindGroup,
 }
+
+fn build_pipeline_ambient_light_depth_prepass(
+    pipeline_data: &Pipeline3dData,
+    backend: &mut Backend,
+) -> wgpu::RenderPipeline {
+    backend
+        .device
+        .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("ambient_light_depth_prepass render pipeline"),
+            layout: Some(&pipeline_data.pipeline_layouts.ambient_light_depth_prepass),
+            vertex: wgpu::VertexState {
+                module: &pipeline_data.shaders.render_mesh,
+                entry_point: "vs_main",
+                buffers: &[Vertex::buffer_layout()],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &pipeline_data.shaders.render_mesh,
+                entry_point: "fs_main_ambient_light_depth_prepass",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: pipeline_data.render_target_info.color_format,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back),
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: pipeline_data.render_target_info.depth_format,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Less,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState {
+                count: pipeline_data.render_target_info.sample_count,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview: None,
+        })
+}
+
+fn build_pipeline_light(
+    pipeline_data: &Pipeline3dData,
+    backend: &mut Backend,
+) -> wgpu::RenderPipeline {
+    backend
+        .device
+        .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("light render pipeline"),
+            layout: Some(&pipeline_data.pipeline_layouts.light),
+            vertex: wgpu::VertexState {
+                module: &pipeline_data.shaders.render_mesh,
+                entry_point: "vs_main",
+                buffers: &[Vertex::buffer_layout()],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &pipeline_data.shaders.render_light,
+                entry_point: "fs_main_blinn_phong",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: pipeline_data.render_target_info.color_format,
+                    blend: Some(ADDITIVE_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back),
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: pipeline_data.render_target_info.depth_format,
+                depth_write_enabled: false,
+                depth_compare: wgpu::CompareFunction::Equal,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState {
+                count: pipeline_data.render_target_info.sample_count,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview: None,
+        })
+}
+
+const ADDITIVE_BLENDING: wgpu::BlendState = {
+    use wgpu::{BlendComponent, BlendFactor, BlendOperation, BlendState};
+    BlendState {
+        alpha: BlendComponent {
+            src_factor: BlendFactor::Zero,
+            dst_factor: BlendFactor::One,
+            operation: BlendOperation::Add,
+        },
+        color: BlendComponent {
+            src_factor: BlendFactor::One,
+            dst_factor: BlendFactor::One,
+            operation: BlendOperation::Add,
+        },
+    }
+};
