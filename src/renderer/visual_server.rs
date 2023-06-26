@@ -6,8 +6,9 @@ use glam::{Affine3A, Mat4, UVec2, Vec2, Vec3Swizzles, Vec4};
 // eventually make it easy to extract in a separate crate (mostly in hopes of getting
 // better compile times). This goes for AssetServer too, I guess.
 use crate::{
-    arena::Handle, asset_server::AssetChanges, image::Image, light::LightKind, scene::UniqueNodeId,
-    AssetServer, Camera, Color, Light, Material, Mesh,
+    arena::Handle, asset_server::AssetChanges, image::Image, light::LightKind,
+    material::BillboardMode, scene::UniqueNodeId, AssetServer, Camera, Color, Light, Material,
+    Mesh,
 };
 
 use super::{
@@ -26,6 +27,8 @@ pub struct VisualServer {
     white_texture: wgpu::Texture,
     font_texture: wgpu::Texture,
     font_handle: Option<Handle<Image>>,
+    default_material: Option<Handle<Material>>,
+    quad_mesh: Option<Handle<Mesh>>,
     //
     render_target: RenderTarget,
     pipeline3d: Pipeline3d,
@@ -77,7 +80,7 @@ impl VisualServer {
             asset_server,
         );
 
-        Self {
+        let mut this = Self {
             backend,
             render_size_factor: 1.0,
             //
@@ -87,11 +90,17 @@ impl VisualServer {
             white_texture,
             font_texture,
             font_handle: None,
+            quad_mesh: None,
+            default_material: None,
             //
             render_target,
             pipeline3d,
             pipeline2d,
-        }
+        };
+
+        this.initialize_default_resources(asset_server);
+
+        this
     }
 
     pub fn render_size(&self) -> UVec2 {
@@ -148,7 +157,11 @@ impl VisualServer {
             let mesh = self.render_scene.meshes.get(&mesh_instance.mesh).unwrap();
 
             for submesh in &mesh.submeshes {
-                let material = self.render_scene.materials.get(&submesh.material).unwrap();
+                let material_handle = mesh_instance
+                    .material_override
+                    .as_ref()
+                    .unwrap_or(&submesh.material);
+                let material = self.render_scene.materials.get(material_handle).unwrap();
                 render_commands_meshes.push(RenderCommandMesh {
                     material_bind_group: &material.bind_group,
                     model_bind_group: &mesh_instance.model_bind_group,
@@ -213,7 +226,7 @@ impl VisualServer {
             color: light.color.to_array(),
             radius: light.radius().unwrap_or_default(),
             kind,
-            _padding: [0.0, 0.0],
+            _padding: Default::default(),
         };
         let uniform_buffer = self.backend.create_uniform_buffer(uniform);
         let bind_group = self.backend.create_light_bind_group(&uniform_buffer);
@@ -248,6 +261,38 @@ impl VisualServer {
                 model_uniform_buffer,
                 model_bind_group,
                 mesh: mesh_handle,
+                material_override: None,
+            },
+        );
+    }
+
+    pub fn set_sprite(
+        &mut self,
+        id: UniqueNodeId,
+        transform: Affine3A,
+        image_handle: Handle<Image>,
+        asset_server: &mut AssetServer,
+    ) {
+        let model_uniform = ModelUniform {
+            transform: Mat4::from(transform).to_cols_array(),
+        };
+        let model_uniform_buffer = self.backend.create_uniform_buffer(model_uniform);
+        let model_bind_group = self.backend.create_model_bind_group(&model_uniform_buffer);
+
+        let material = asset_server.add(Material {
+            base_color: Color::WHITE,
+            base_color_image: Some(image_handle),
+            billboard_mode: BillboardMode::FixedSize,
+        });
+        self.register_material(material, asset_server);
+
+        self.render_scene.mesh_instances.insert(
+            id,
+            RenderMeshInstance {
+                model_uniform_buffer,
+                model_bind_group,
+                mesh: self.quad_mesh.unwrap(),
+                material_override: Some(material),
             },
         );
     }
@@ -352,13 +397,18 @@ impl VisualServer {
 
             let mut render_submeshes = Vec::new();
             for submesh in &mesh.submeshes {
-                materials_to_register.push(submesh.material);
+                let material = if let Some(material) = submesh.material {
+                    materials_to_register.push(material);
+                    material
+                } else {
+                    self.default_material.unwrap()
+                };
 
                 render_submeshes.push(RenderSubmesh {
                     vertex_buffer: self.backend.create_vertex_buffer(&submesh.vertices),
                     index_buffer: self.backend.create_index_buffer(&submesh.indices),
                     index_count: submesh.indices.len() as u32,
-                    material: submesh.material,
+                    material,
                 })
             }
             let render_mesh = RenderMesh {
@@ -391,8 +441,15 @@ impl VisualServer {
         asset_server: &AssetServer,
     ) {
         let material = asset_server.get(handle);
+        let billboard_mode = match &material.billboard_mode {
+            BillboardMode::Off => 0,
+            BillboardMode::On => 1,
+            BillboardMode::FixedSize => 2,
+        };
         let material_uniform = MaterialUniform {
             base_color: material.base_color.into(),
+            billboard_mode,
+            _padding: Default::default(),
         };
 
         let uniform_buffer = self.backend.create_uniform_buffer(material_uniform);
@@ -438,6 +495,16 @@ impl VisualServer {
             image.mip_level_count(),
         );
         self.render_scene.textures.insert(handle, texture);
+    }
+
+    fn initialize_default_resources(&mut self, asset_server: &mut AssetServer) {
+        let material = asset_server.add(Material::default());
+        self.register_material(material, asset_server);
+        self.default_material = Some(material);
+
+        let mesh = asset_server.add(Mesh::quad());
+        self.register_mesh(mesh, asset_server);
+        self.quad_mesh = Some(mesh);
     }
 }
 
@@ -497,6 +564,7 @@ struct RenderMeshInstance {
     #[allow(unused)]
     model_uniform_buffer: wgpu::Buffer,
     mesh: Handle<Mesh>,
+    material_override: Option<Handle<Material>>,
 }
 
 #[repr(C)]
@@ -519,6 +587,8 @@ struct RenderMaterial {
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct MaterialUniform {
     base_color: [f32; 4],
+    billboard_mode: u32,
+    _padding: [u32; 3],
 }
 
 #[repr(C)]

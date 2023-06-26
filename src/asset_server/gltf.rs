@@ -11,8 +11,8 @@ use gltf::{
 };
 
 use crate::{
-    arena::Handle, renderer::Vertex, scene::NodeId, AssetServer, Image, Material, Mesh, Node,
-    Scene, Submesh,
+    arena::Handle, material::BillboardMode, renderer::Vertex, scene::NodeId, AssetServer, Image,
+    Material, Mesh, Node, Scene, Submesh,
 };
 
 pub struct GtlfLoader<'a> {
@@ -97,6 +97,7 @@ impl<'a> Write<'a> {
                     let id = info.texture().index();
                     self.images_ids_map.get(&id).copied()
                 }),
+                billboard_mode: BillboardMode::Off,
             });
             self.material_ids_map.insert(id, handle);
         }
@@ -344,7 +345,7 @@ impl<'a> Write<'a> {
             let submesh = Submesh {
                 vertices,
                 indices,
-                material,
+                material: Some(material),
             };
             submeshes.push(submesh);
         }

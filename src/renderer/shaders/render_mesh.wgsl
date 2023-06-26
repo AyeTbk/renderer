@@ -6,6 +6,17 @@ struct SceneUniform {
 @group(0) @binding(0)
 var<uniform> scene: SceneUniform;
 
+struct MaterialUniform {
+    base_color: vec4f,
+    billboard_mode: u32, // Off: 0, On: 1, Fixed-size: 2
+};
+@group(1) @binding(0)
+var<uniform> material: MaterialUniform;
+@group(1) @binding(1)
+var base_color_texture: texture_2d<f32>;
+@group(1) @binding(2)
+var material_sampler: sampler;
+
 struct ModelUniform {
     transform: mat4x4f,
 };
@@ -37,23 +48,21 @@ fn vs_main(
     
     // FIXME: This is incorrect, normals will be wrong with a non-uniform scaling factor (look up 'normal matrix')
     out.normal = (model.transform * vec4f(vertex.normal, 0.0)).xyz;
-
     out.uv = vertex.uv;
+
+    if material.billboard_mode == 2u {
+        let vp_model_pos = scene.projection_view * vec4f(model.transform.w.xyz, 1.0);
+        out.clip_position = vp_model_pos;
+        out.clip_position /= out.clip_position.w;
+        out.clip_position = vec4f(
+            out.clip_position.xy + vertex.pos.xy * vec2f(0.4, 0.4),
+            out.clip_position.z,
+            out.clip_position.w,
+        );
+    }
 
     return out;
 }
-
-
-
-struct MaterialUniform {
-    base_color: vec4f,
-};
-@group(1) @binding(0)
-var<uniform> material: MaterialUniform;
-@group(1) @binding(1)
-var base_color_texture: texture_2d<f32>;
-@group(1) @binding(2)
-var material_sampler: sampler;
 
 
 

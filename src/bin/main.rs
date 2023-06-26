@@ -62,14 +62,14 @@ fn main() {
     // Lights
     eng.scene.add_allocate_child(
         eng.scene.root,
-        Node::new_light(Light::directional().with_color(Color::new(1.0, 0.9, 0.8, 0.5)))
+        Node::new_light(Light::directional().with_color(Color::new(1.0, 0.9, 0.8, 0.4)))
             .with_transform(
                 Affine3A::look_to_lh(Vec3::ZERO, Vec3::new(0.1, -1.0, 0.4), Vec3::Y).inverse(),
             ),
     );
     eng.scene.add_allocate_child(
         eng.scene.root,
-        Node::new_light(Light::point(4.0).with_color(Color::new(1.0, 0.0, 0.0, 1.0)))
+        Node::new_light(Light::point(4.0).with_color(Color::new(1.0, 0.01, 0.005, 2.0)))
             .with_transform(Affine3A::from_translation(Vec3::new(0.0, 1.0, 1.0))),
     );
 

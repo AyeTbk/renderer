@@ -1,7 +1,9 @@
+use asset_image::Image;
 use glam::{Affine3A, UVec2, Vec2, Vec3};
 use winit::{event::VirtualKeyCode, window::Window};
 
 use crate::{
+    arena::Handle,
     scene::{NodeData, NodeId},
     AssetServer, Input, Scene, VisualServer,
 };
@@ -12,17 +14,20 @@ pub struct Engine {
     pub input: Input,
     pub display: Display,
     pub scene: Scene,
+    gizmo_image: Handle<Image>,
 }
 
 impl Engine {
     pub fn new(window: &Window) -> Self {
         let mut asset_server = AssetServer::new();
+        let gizmo_image = asset_server.load("data/gizmo_dummy.png");
         Self {
             visual_server: VisualServer::new(window, &mut asset_server),
             asset_server,
             input: Default::default(),
             display: Default::default(),
             scene: Scene::new_empty(),
+            gizmo_image,
         }
     }
 
@@ -48,6 +53,7 @@ impl Engine {
                 display: &self.display,
                 input: &self.input,
                 time: &Time { delta: 1.0 / 60.0 },
+                gizmo_image: self.gizmo_image,
             },
         );
     }
@@ -108,6 +114,12 @@ impl Engine {
                 context
                     .visual_server
                     .set_light(unique_node_id, node_global_transform, light);
+                context.visual_server.set_sprite(
+                    unique_node_id,
+                    node_global_transform,
+                    context.gizmo_image,
+                    context.asset_server,
+                );
             }
             NodeData::Mesh(mesh_handle) => {
                 context.visual_server.set_mesh_instance(
@@ -148,6 +160,7 @@ pub struct Context<'a> {
     pub display: &'a Display,
     pub input: &'a Input,
     pub time: &'a Time,
+    pub gizmo_image: Handle<Image>,
 }
 
 pub struct Time {
