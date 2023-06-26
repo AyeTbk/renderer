@@ -62,7 +62,7 @@ fn main() {
     // Lights
     eng.scene.add_allocate_child(
         eng.scene.root,
-        Node::new_light(Light::directional().with_color(Color::new(1.0, 0.9, 0.8, 0.4)))
+        Node::new_light(Light::directional().with_color(Color::new(1.0, 0.9, 0.8, 1.0)))
             .with_transform(
                 Affine3A::look_to_lh(Vec3::ZERO, Vec3::new(0.1, -1.0, 0.4), Vec3::Y).inverse(),
             ),

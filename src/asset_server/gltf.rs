@@ -98,6 +98,7 @@ impl<'a> Write<'a> {
                     self.images_ids_map.get(&id).copied()
                 }),
                 billboard_mode: BillboardMode::Off,
+                unlit: false,
             });
             self.material_ids_map.insert(id, handle);
         }

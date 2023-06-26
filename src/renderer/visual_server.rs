@@ -1,6 +1,6 @@
 use std::collections::{hash_map::Entry, HashMap};
 
-use glam::{Affine3A, Mat4, UVec2, Vec2, Vec3Swizzles, Vec4};
+use glam::{Affine3A, Mat4, UVec2, Vec2, Vec3Swizzles};
 
 // TODO Find ways to reduce coupling between the renderer and the rest of the engine, to
 // eventually make it easy to extract in a separate crate (mostly in hopes of getting
@@ -45,8 +45,9 @@ impl VisualServer {
         let viewport_uniform_buffer = backend.create_uniform_buffer(viewport_uniform);
 
         let scene_uniform = SceneUniform {
-            projection_view: Camera::default().projection_matrix().to_cols_array(),
-            view_pos: Vec4::default().to_array(),
+            projection: Camera::default().projection_matrix().to_cols_array(),
+            view: Mat4::IDENTITY.to_cols_array(),
+            camera_transform: Mat4::IDENTITY.to_cols_array(),
             ambient_light: Color::new(0.3, 0.5, 0.9, 0.04).to_array(),
         };
         let render_scene_data = RenderSceneData {
@@ -140,9 +141,9 @@ impl VisualServer {
     }
 
     pub fn set_camera(&mut self, transform: &Affine3A, camera: &Camera) {
-        self.render_scene_data.uniform.projection_view =
-            (camera.projection_matrix() * transform.inverse()).to_cols_array();
-        self.render_scene_data.uniform.view_pos = transform.translation.xyzz().to_array();
+        self.render_scene_data.uniform.projection = camera.projection_matrix().to_cols_array();
+        self.render_scene_data.uniform.view = Mat4::from(transform.inverse()).to_cols_array();
+        self.render_scene_data.uniform.camera_transform = Mat4::from(*transform).to_cols_array();
 
         self.backend.update_uniform_buffer(
             &self.render_scene_data.uniform_buffer,
@@ -271,6 +272,7 @@ impl VisualServer {
         id: UniqueNodeId,
         transform: Affine3A,
         image_handle: Handle<Image>,
+        base_color: Color,
         asset_server: &mut AssetServer,
     ) {
         let model_uniform = ModelUniform {
@@ -280,9 +282,10 @@ impl VisualServer {
         let model_bind_group = self.backend.create_model_bind_group(&model_uniform_buffer);
 
         let material = asset_server.add(Material {
-            base_color: Color::WHITE,
+            base_color,
             base_color_image: Some(image_handle),
-            billboard_mode: BillboardMode::FixedSize,
+            billboard_mode: BillboardMode::On,
+            unlit: true,
         });
         self.register_material(material, asset_server);
 
@@ -449,6 +452,7 @@ impl VisualServer {
         let material_uniform = MaterialUniform {
             base_color: material.base_color.into(),
             billboard_mode,
+            unlit: material.unlit as u8 as u32,
             _padding: Default::default(),
         };
 
@@ -522,8 +526,9 @@ struct RenderSceneData {
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct SceneUniform {
-    projection_view: [f32; 16],
-    view_pos: [f32; 4],
+    projection: [f32; 16],
+    view: [f32; 16],
+    camera_transform: [f32; 16],
     ambient_light: [f32; 4],
 }
 
@@ -588,7 +593,8 @@ struct RenderMaterial {
 struct MaterialUniform {
     base_color: [f32; 4],
     billboard_mode: u32,
-    _padding: [u32; 3],
+    unlit: u32,
+    _padding: [u32; 2],
 }
 
 #[repr(C)]

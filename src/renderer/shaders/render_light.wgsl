@@ -1,6 +1,7 @@
 struct SceneUniform {
-    projection_view: mat4x4f,
-    view_pos: vec4f,
+    projection: mat4x4f,
+    view: mat4x4f,
+    camera_transform: mat4x4f,
     ambient_light: vec4f,
 };
 @group(0) @binding(0)
@@ -15,6 +16,8 @@ struct VertexOutput {
 
 struct MaterialUniform {
     base_color: vec4f,
+    billboard_mode: u32, // Off: 0, On: 1, Fixed-size: 2
+    unlit: u32,
 };
 @group(1) @binding(0)
 var<uniform> material: MaterialUniform;
@@ -35,6 +38,11 @@ var<uniform> light: LightUniform;
 
 @fragment
 fn fs_main_blinn_phong(in: VertexOutput) -> @location(0) vec4f {
+    if material.unlit == 1u {
+        // TODO This probably should just not be a draw call...
+        discard;
+    }
+
     let normal = normalize(in.normal);
     let base_color = material.base_color.rgba * textureSample(base_color_texture, material_sampler, in.uv).rgba;
     
@@ -42,7 +50,7 @@ fn fs_main_blinn_phong(in: VertexOutput) -> @location(0) vec4f {
         discard;
     }
 
-    let from_frag_to_view_dir = normalize(scene.view_pos.xyz - in.frag_pos);
+    let from_frag_to_view_dir = normalize(scene.camera_transform.w.xyz - in.frag_pos);
     var light_contribution = vec3f(0.0);
     if light.kind == 0u {
         light_contribution = compute_light_blinn_phong(

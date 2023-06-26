@@ -118,6 +118,7 @@ impl Engine {
                     unique_node_id,
                     node_global_transform,
                     context.gizmo_image,
+                    light.color,
                     context.asset_server,
                 );
             }

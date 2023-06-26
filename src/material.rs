@@ -4,6 +4,7 @@ pub struct Material {
     pub base_color: Color,
     pub base_color_image: Option<Handle<Image>>,
     pub billboard_mode: BillboardMode,
+    pub unlit: bool,
 }
 
 impl Default for Material {
@@ -12,6 +13,7 @@ impl Default for Material {
             base_color: Color::WHITE,
             base_color_image: None,
             billboard_mode: BillboardMode::Off,
+            unlit: false,
         }
     }
 }
