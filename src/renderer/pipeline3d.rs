@@ -1,10 +1,6 @@
 use wgpu::CommandEncoder;
 
-use crate::{
-    arena::Handle,
-    asset_server::{shader_source::ShaderSource, AssetChanges},
-    AssetServer,
-};
+use crate::{arena::Handle, asset_server::AssetChanges, shader_source::ShaderSource, AssetServer};
 
 use super::{
     backend::Backend,
@@ -39,8 +35,8 @@ impl Pipeline3d {
             .get(render_mesh_shader_source_handle)
             .source()
             .to_string();
-        let render_light_shader_source_handle =
-            asset_server.load::<ShaderSource>("src/renderer/shaders/render_light.wgsl");
+        let render_light_shader_source_handle = asset_server
+            .load_with_options::<ShaderSource>("src/renderer/shaders/render_mesh.wgsl", "LIGHTS");
         let render_light_shader_source = asset_server.get(render_light_shader_source_handle);
         let shaders = Shaders {
             render_mesh_source: render_mesh_shader_source_handle,

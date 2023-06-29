@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use super::{Asset, Loadable, Loader};
+use crate::Preprocessor;
 
 pub struct ShaderSource {
     src: String,
@@ -11,9 +11,13 @@ impl ShaderSource {
         Self { src }
     }
 
-    pub fn load_from_path(path: impl AsRef<Path>) -> Result<Self, String> {
+    pub fn load_from_path(path: impl AsRef<Path>, defines: Vec<String>) -> Result<Self, String> {
         let src = std::fs::read_to_string(path).map_err(|e| format!("{:?}", e))?;
-        Ok(Self::new(src))
+
+        let mut pp = Preprocessor::new(&src).with_defines(defines);
+        pp.preprocess()?;
+
+        Ok(Self::new(pp.source()))
     }
 
     pub fn source(&self) -> &str {
@@ -36,29 +40,5 @@ impl ShaderSource {
             }
         }
         Ok(())
-    }
-}
-
-impl Loadable for ShaderSource {
-    fn new_placeholder() -> Self {
-        Self::new(String::new())
-    }
-
-    fn new_loader() -> Box<dyn Loader> {
-        Box::new(ShaderSourceLoader)
-    }
-}
-
-pub struct ShaderSourceLoader;
-
-impl Loader for ShaderSourceLoader {
-    fn load_from_path(&self, path: &str) -> Result<Box<dyn Asset>, String> {
-        let shader_source = ShaderSource::load_from_path(path)?;
-        shader_source.validate()?;
-        Ok(Box::new(shader_source))
-    }
-
-    fn only_sync(&self) -> bool {
-        true
     }
 }

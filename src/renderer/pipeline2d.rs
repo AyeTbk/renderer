@@ -2,11 +2,7 @@ use glam::Vec2;
 use wgpu::CommandEncoder;
 
 pub mod glyph_instance;
-use crate::{
-    arena::Handle,
-    asset_server::{shader_source::ShaderSource, AssetChanges},
-    AssetServer,
-};
+use crate::{arena::Handle, asset_server::AssetChanges, shader_source::ShaderSource, AssetServer};
 
 use self::glyph_instance::GlyphInstance;
 

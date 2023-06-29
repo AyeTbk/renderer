@@ -7,7 +7,7 @@ impl Loadable for Image {
         Self::new_dummy()
     }
 
-    fn new_loader() -> Box<dyn Loader> {
+    fn new_loader(_options: &str) -> Box<dyn Loader> {
         Box::new(ImageLoader)
     }
 }
@@ -15,7 +15,7 @@ impl Loadable for Image {
 pub struct ImageLoader;
 
 impl Loader for ImageLoader {
-    fn load_from_path(&self, path: &str) -> Result<Box<dyn Asset>, String> {
+    fn load_from_path(&mut self, path: &str) -> Result<Box<dyn Asset>, String> {
         let mut image = Image::load_from_path(path)?;
         let _ = image.make_mips();
         Ok(Box::new(image))

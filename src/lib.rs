@@ -4,7 +4,7 @@ pub use engine::Engine;
 pub mod arena;
 
 mod renderer;
-pub use renderer::VisualServer;
+pub use self::renderer::VisualServer;
 
 mod asset_server;
 pub use asset_server::AssetServer;
@@ -22,7 +22,10 @@ mod mesh;
 pub use mesh::{Mesh, Submesh};
 
 mod image;
-pub use crate::image::Image;
+pub use image::Image;
+
+pub mod shader_source;
+pub use shader_source::ShaderSource;
 
 mod scene;
 pub use scene::{Node, NodeData, Scene};

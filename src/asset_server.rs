@@ -8,13 +8,10 @@ use std::{
 
 use crate::{
     arena::{Arena, Handle, TypeErasedHandle},
-    Image, Material, Mesh, Scene, Timestamp,
+    Image, Material, Mesh, Scene, ShaderSource, Timestamp,
 };
 
-use self::shader_source::ShaderSource;
-
 mod gltf;
-pub mod shader_source;
 
 const FILES_CHECK_POLL_INTERVAL: f64 = 0.25;
 
@@ -80,8 +77,17 @@ impl AssetServer {
     }
 
     pub fn load<A: Asset + Loadable>(&mut self, path: &str) -> Handle<A> {
+        self.load_with_options(path, "")
+    }
+
+    pub fn load_with_options<A: Asset + Loadable>(
+        &mut self,
+        path: &str,
+        options: &str,
+    ) -> Handle<A> {
         let handle = self.add(A::new_placeholder());
         self.set_asset_path(handle, path);
+        self.set_asset_load_options(handle, options);
         self.reload(handle);
 
         handle
@@ -91,7 +97,8 @@ impl AssetServer {
         let path = self
             .asset_path(handle)
             .expect("assets without path cannot be reloaded");
-        let loader = A::new_loader();
+        let load_options = self.asset_load_options(handle);
+        let mut loader = A::new_loader(load_options);
         if loader.only_sync() {
             if let Ok(boxed_asset) = loader.load_from_path(path) {
                 self.set_asset(handle.to_type_erased(), boxed_asset);
@@ -229,6 +236,18 @@ impl AssetServer {
         self.get_metadata_mut(handle).path = Some(path.into());
     }
 
+    pub(crate) fn asset_load_options<A: Asset>(&self, handle: Handle<A>) -> &str {
+        self.get_metadata(handle).load_options.as_str()
+    }
+
+    pub(crate) fn set_asset_load_options<A: Asset>(
+        &mut self,
+        handle: Handle<A>,
+        load_options: impl Into<String>,
+    ) {
+        self.get_metadata_mut(handle).load_options = load_options.into();
+    }
+
     pub(crate) fn asset_timestamp<A: Asset>(&self, handle: Handle<A>) -> Timestamp {
         self.get_metadata(handle).timestamp
     }
@@ -272,7 +291,7 @@ impl AssetServer {
                             match work {
                                 Work::LoadFromPath {
                                     handle,
-                                    loader,
+                                    mut loader,
                                     path,
                                 } => {
                                     let result = loader.load_from_path(&path);
@@ -319,7 +338,7 @@ pub trait Asset: Any + Send {
 
 pub trait Loadable {
     fn new_placeholder() -> Self;
-    fn new_loader() -> Box<dyn Loader>;
+    fn new_loader(options: &str) -> Box<dyn Loader>;
 }
 
 trait IsAsset: Send {}
@@ -342,6 +361,7 @@ impl<T: IsAsset + Any> Asset for T {
 struct Metadata {
     path: Option<String>,
     timestamp: Timestamp,
+    load_options: String,
 }
 
 impl Metadata {
@@ -349,12 +369,13 @@ impl Metadata {
         Self {
             path: None,
             timestamp: Timestamp::now(),
+            load_options: String::new(),
         }
     }
 }
 
 pub trait Loader: Send {
-    fn load_from_path(&self, path: &str) -> Result<Box<dyn Asset>, String>;
+    fn load_from_path(&mut self, path: &str) -> Result<Box<dyn Asset>, String>;
 
     fn only_sync(&self) -> bool {
         false
