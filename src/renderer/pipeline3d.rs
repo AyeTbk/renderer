@@ -10,7 +10,7 @@ use super::{
 
 pub struct Pipeline3d {
     pipelines: Pipelines,
-    data: Pipeline3dData,
+    pub data: Pipeline3dData,
 }
 
 pub struct Pipeline3dData {
@@ -18,7 +18,7 @@ pub struct Pipeline3dData {
     render_target_info: RenderTargetInfo,
     pipeline_layouts: PipelineLayouts,
     #[allow(unused)]
-    bind_group_layouts: BindGroupLayouts,
+    pub bind_group_layouts: BindGroupLayouts,
     shaders: Shaders,
 }
 
@@ -35,16 +35,31 @@ impl Pipeline3d {
             .get(render_mesh_shader_source_handle)
             .source()
             .to_string();
+
         let render_light_shader_source_handle = asset_server
             .load_with_options::<ShaderSource>("src/renderer/shaders/render_mesh.wgsl", "LIGHTS");
-        let render_light_shader_source = asset_server.get(render_light_shader_source_handle);
+        let render_light_shader_source = asset_server
+            .get(render_light_shader_source_handle)
+            .source()
+            .to_string();
+
+        let render_shadow_map_shader_source_handle =
+            asset_server.load::<ShaderSource>("src/renderer/shaders/render_shadow_map.wgsl");
+        let render_shadow_map_shader_source =
+            asset_server.get(render_shadow_map_shader_source_handle);
+
         let shaders = Shaders {
             render_mesh_source: render_mesh_shader_source_handle,
             render_mesh: backend
                 .create_shader_module("render mesh shader", &render_mesh_shader_source),
             render_light_source: render_light_shader_source_handle,
             render_light: backend
-                .create_shader_module("render light shader", render_light_shader_source.source()),
+                .create_shader_module("render light shader", &render_light_shader_source),
+            render_shadow_map_source: render_shadow_map_shader_source_handle,
+            render_shadow_map: backend.create_shader_module(
+                "render shadow map shader",
+                render_shadow_map_shader_source.source(),
+            ),
         };
 
         let bind_group_layouts = BindGroupLayouts {
@@ -152,6 +167,13 @@ impl Pipeline3d {
                     ],
                     push_constant_ranges: &[],
                 }),
+            directional_shadow_map: backend.device.create_pipeline_layout(
+                &wgpu::PipelineLayoutDescriptor {
+                    label: Some("directional shadow map pipeline layout"),
+                    bind_group_layouts: &[&bind_group_layouts.scene, &bind_group_layouts.model],
+                    push_constant_ranges: &[],
+                },
+            ),
         };
 
         let scene_bind_group = backend
@@ -208,6 +230,14 @@ impl Pipeline3d {
 
             self.rebuild_pipelines(backend);
         }
+
+        if changes.contains(self.data.shaders.render_shadow_map_source) {
+            let source = asset_server.get(self.data.shaders.render_shadow_map_source);
+            self.data.shaders.render_shadow_map =
+                backend.create_shader_module("render shadow map shader", source.source());
+
+            self.rebuild_pipelines(backend);
+        }
     }
 
     pub fn render(
@@ -216,8 +246,44 @@ impl Pipeline3d {
         render_commands: &RenderCommands,
         render_target: &RenderTarget,
     ) {
-        let (color_attachment, depth_stencil_attachment) = render_target.render_pass_attachments();
+        // Shadow maps
+        for light in render_commands.lights {
+            let depth_view = light.shadow_map.create_view(&Default::default());
+            let depth_stencil_attachment = wgpu::RenderPassDepthStencilAttachment {
+                view: &depth_view,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: true,
+                }),
+                stencil_ops: None,
+            };
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("shadow map render pass"),
+                color_attachments: &[],
+                depth_stencil_attachment: Some(depth_stencil_attachment),
+            });
 
+            render_pass.set_pipeline(&self.pipelines.directional_shadow_map);
+            render_pass.set_bind_group(0, &light.shadow_map_scene_bind_group, &[]);
+
+            for mesh in render_commands.meshes {
+                let RenderCommandMesh {
+                    model_bind_group,
+                    vertex_buffer,
+                    index_buffer,
+                    index_count,
+                    ..
+                } = mesh;
+
+                render_pass.set_bind_group(1, model_bind_group, &[]);
+                render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+                render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                render_pass.draw_indexed(0..*index_count, 0, 0..1);
+            }
+        }
+
+        //## ACTUAL RENDERING DOWN HERE
+        let (color_attachment, depth_stencil_attachment) = render_target.render_pass_attachments();
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("render pass"),
             color_attachments: &[Some(color_attachment)],
@@ -276,6 +342,7 @@ impl Pipeline3d {
         Pipelines {
             ambient_light_depth_prepass: build_pipeline_ambient_light_depth_prepass(data, backend),
             light: build_pipeline_light(data, backend),
+            directional_shadow_map: build_pipeline_directional_shadow_map(data, backend),
         }
     }
 }
@@ -283,14 +350,16 @@ impl Pipeline3d {
 struct PipelineLayouts {
     pub ambient_light_depth_prepass: wgpu::PipelineLayout,
     pub light: wgpu::PipelineLayout,
+    pub directional_shadow_map: wgpu::PipelineLayout,
 }
 
 struct Pipelines {
     pub ambient_light_depth_prepass: wgpu::RenderPipeline,
     pub light: wgpu::RenderPipeline,
+    pub directional_shadow_map: wgpu::RenderPipeline,
 }
 
-struct BindGroupLayouts {
+pub struct BindGroupLayouts {
     pub scene: wgpu::BindGroupLayout,
     pub material: wgpu::BindGroupLayout,
     pub model: wgpu::BindGroupLayout,
@@ -302,6 +371,8 @@ struct Shaders {
     pub render_mesh: wgpu::ShaderModule,
     pub render_light_source: Handle<ShaderSource>,
     pub render_light: wgpu::ShaderModule,
+    pub render_shadow_map_source: Handle<ShaderSource>,
+    pub render_shadow_map: wgpu::ShaderModule,
 }
 
 pub struct RenderCommands<'a> {
@@ -319,6 +390,8 @@ pub struct RenderCommandMesh<'a> {
 
 pub struct RenderCommandLight<'a> {
     pub bind_group: &'a wgpu::BindGroup,
+    pub shadow_map_scene_bind_group: &'a wgpu::BindGroup,
+    pub shadow_map: &'a wgpu::Texture,
 }
 
 fn build_pipeline_ambient_light_depth_prepass(
@@ -406,6 +479,44 @@ fn build_pipeline_light(
             }),
             multisample: wgpu::MultisampleState {
                 count: pipeline_data.render_target_info.sample_count,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview: None,
+        })
+}
+
+fn build_pipeline_directional_shadow_map(
+    pipeline_data: &Pipeline3dData,
+    backend: &mut Backend,
+) -> wgpu::RenderPipeline {
+    backend
+        .device
+        .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("directional shadow map render pipeline"),
+            layout: Some(&pipeline_data.pipeline_layouts.directional_shadow_map),
+            vertex: wgpu::VertexState {
+                module: &pipeline_data.shaders.render_shadow_map,
+                entry_point: "vs_main",
+                buffers: &[Vertex::buffer_layout()],
+            },
+            fragment: None,
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back),
+                ..Default::default()
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: Backend::DEPTH_TEXTURE_FORMAT,
+                depth_write_enabled: true,
+                depth_compare: wgpu::CompareFunction::Less,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState {
+                count: 1,
                 mask: !0,
                 alpha_to_coverage_enabled: false,
             },

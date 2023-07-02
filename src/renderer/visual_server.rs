@@ -177,6 +177,8 @@ impl VisualServer {
         for light in self.render_scene.lights.values() {
             render_commands_lights.push(RenderCommandLight {
                 bind_group: &light.bind_group,
+                shadow_map_scene_bind_group: &light.shadow_map_scene_bind_group,
+                shadow_map: &light.shadow_map,
             });
         }
 
@@ -231,12 +233,52 @@ impl VisualServer {
         };
         let uniform_buffer = self.backend.create_uniform_buffer(uniform);
         let bind_group = self.backend.create_light_bind_group(&uniform_buffer);
+        let shadow_map = self
+            .backend
+            .device
+            .create_texture(&wgpu::TextureDescriptor {
+                label: Some("depth texture"),
+                size: wgpu::Extent3d {
+                    width: 1024,
+                    height: 1024,
+                    ..Default::default()
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: Backend::DEPTH_TEXTURE_FORMAT,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats: &[],
+            });
+        let shadow_map_scene_uniform = SceneUniform {
+            projection: Mat4::orthographic_lh(16.0, 16.0, 16.0, 16.0, 0.1, 1000.0).to_cols_array(),
+            view: Mat4::from(transform.inverse()).to_cols_array(),
+            camera_transform: Mat4::from(transform).to_cols_array(),
+            ambient_light: [0.0, 0.0, 0.0, 0.0],
+        };
+        let shadow_map_scene_uniform_buffer =
+            self.backend.create_uniform_buffer(shadow_map_scene_uniform);
+        let shadow_map_scene_bind_group =
+            self.backend
+                .device
+                .create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("scene bind group"),
+                    layout: &self.pipeline3d.data.bind_group_layouts.scene,
+                    entries: &[wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: shadow_map_scene_uniform_buffer.as_entire_binding(),
+                    }],
+                });
 
         self.render_scene.lights.insert(
             id,
             RenderLight {
-                uniform_buffer,
                 bind_group,
+                uniform_buffer,
+                shadow_map_scene_bind_group,
+                shadow_map_scene_uniform_buffer,
+                shadow_map,
             },
         );
     }
@@ -551,6 +593,10 @@ struct RenderLight {
     bind_group: wgpu::BindGroup,
     #[allow(unused)]
     uniform_buffer: wgpu::Buffer,
+    shadow_map_scene_bind_group: wgpu::BindGroup,
+    #[allow(unused)]
+    shadow_map_scene_uniform_buffer: wgpu::Buffer,
+    shadow_map: wgpu::Texture,
 }
 
 struct RenderMesh {
