@@ -13,7 +13,10 @@ use crate::{
 
 use super::{
     backend::Backend,
-    pipeline2d::{glyph_instance::GlyphInstance, Pipeline2d, RenderTextCommand},
+    pipeline2d::{
+        self, glyph_instance::GlyphInstance, Pipeline2d, RenderFullscreenTextureCommand,
+        RenderTextCommand,
+    },
     pipeline3d::{Pipeline3d, RenderCommandLight, RenderCommandMesh, RenderCommands},
 };
 
@@ -204,8 +207,21 @@ impl VisualServer {
                 instance_count: text.instance_count,
             });
         }
+
+        let maybe_texture_command =
+            if let Some(render_texture) = &self.render_scene.fullscreen_texture {
+                Some(RenderFullscreenTextureCommand {
+                    fullscreen_texture_bind_group: &render_texture.bind_group,
+                })
+            } else {
+                None
+            };
+        let commands_2d = pipeline2d::RenderCommands {
+            texts: &render_text_commands,
+            texture: maybe_texture_command.as_ref(),
+        };
         self.pipeline2d
-            .render(&mut encoder, &render_text_commands, &self.render_target);
+            .render(&mut encoder, &commands_2d, &self.render_target);
 
         // FIXME: Strive to minimise the amount of submits across the board / submit as much work as possible
         // to reduce overhead / wasted GPU cycles. Right now there is two submits, one here and one in backend,
@@ -216,6 +232,47 @@ impl VisualServer {
             .render_texture(&self.render_target.output_color_texture())?;
 
         Ok(())
+    }
+
+    pub fn set_depth_fullscreen_texture(&mut self) {
+        // let Some(light) = self.render_scene.lights.get(&light_id) else {
+        //     eprintln!("warning: {}:{}: no such light registered", file!(), line!());
+        //     return;
+        // };
+        // let texture = &light.shadow_map;
+        let texture = &self.render_target.texture.depth();
+        let sampler = self.backend.create_non_filtering_sampler();
+        let bind_group = self.pipeline2d.build_fullscreen_texture_bind_group(
+            texture,
+            &sampler,
+            &mut self.backend,
+        );
+        self.render_scene.fullscreen_texture = Some(RenderFullscreenTexture {
+            bind_group,
+            sampler,
+        });
+    }
+
+    pub fn set_shadow_map_fullscreen_texture(&mut self, light_id: UniqueNodeId) {
+        let Some(light) = self.render_scene.lights.get(&light_id) else {
+            eprintln!("warning: {}:{}: no such light registered", file!(), line!());
+            return;
+        };
+        let texture = &light.shadow_map;
+        let sampler = self.backend.create_non_filtering_sampler();
+        let bind_group = self.pipeline2d.build_fullscreen_texture_bind_group(
+            texture,
+            &sampler,
+            &mut self.backend,
+        );
+        self.render_scene.fullscreen_texture = Some(RenderFullscreenTexture {
+            bind_group,
+            sampler,
+        });
+    }
+
+    pub fn unset_fullscreen_texture(&mut self) {
+        self.render_scene.fullscreen_texture = None;
     }
 
     pub fn set_light(&mut self, id: UniqueNodeId, transform: Affine3A, light: &Light) {
@@ -251,8 +308,18 @@ impl VisualServer {
                     | wgpu::TextureUsages::TEXTURE_BINDING,
                 view_formats: &[],
             });
+
+        let ortho_size = 16.0;
         let shadow_map_scene_uniform = SceneUniform {
-            projection: Mat4::orthographic_lh(16.0, 16.0, 16.0, 16.0, 0.1, 1000.0).to_cols_array(),
+            projection: Mat4::orthographic_lh(
+                -ortho_size,
+                ortho_size,
+                -ortho_size,
+                ortho_size,
+                0.05,
+                100.0,
+            )
+            .to_cols_array(),
             view: Mat4::from(transform.inverse()).to_cols_array(),
             camera_transform: Mat4::from(transform).to_cols_array(),
             ambient_light: [0.0, 0.0, 0.0, 0.0],
@@ -582,6 +649,13 @@ struct RenderScene {
     lights: HashMap<UniqueNodeId, RenderLight>,
     mesh_instances: HashMap<UniqueNodeId, RenderMeshInstance>,
     texts: HashMap<UniqueNodeId, RenderText>,
+    fullscreen_texture: Option<RenderFullscreenTexture>,
+}
+
+struct RenderFullscreenTexture {
+    bind_group: wgpu::BindGroup,
+    #[allow(unused)]
+    sampler: wgpu::Sampler,
 }
 
 struct RenderText {
@@ -676,6 +750,14 @@ pub enum RenderTargetTexture {
         resolve: wgpu::Texture,
         resolve_view: wgpu::TextureView,
     },
+}
+
+impl RenderTargetTexture {
+    pub fn depth(&self) -> &wgpu::Texture {
+        match self {
+            Self::Simple { depth, .. } | Self::Multisampled { depth, .. } => depth,
+        }
+    }
 }
 
 pub struct RenderTargetInfo {

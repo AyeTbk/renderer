@@ -13,8 +13,8 @@ impl Default for Camera {
         Self {
             vfov: 1.3,
             aspect_ratio: 1.667,
-            near: 0.01,
-            far: 1000.0,
+            near: 0.05,
+            far: 100.0,
         }
     }
 }

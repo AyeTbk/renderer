@@ -60,13 +60,20 @@ fn main() {
     );
 
     // Lights
-    eng.scene.add_allocate_child(
+    let dirlight = eng.scene.add_allocate_child(
         eng.scene.root,
         Node::new_light(Light::directional().with_color(Color::new(1.0, 0.9, 0.8, 1.0)))
             .with_transform(
-                Affine3A::look_to_lh(Vec3::ZERO, Vec3::new(0.1, -1.0, 0.4), Vec3::Y).inverse(),
+                Affine3A::look_to_lh(
+                    Vec3::new(-3.0, 30.0, -12.0),
+                    Vec3::new(0.1, -1.0, 0.4),
+                    Vec3::Y,
+                )
+                .inverse(),
             ),
     );
+    let dirlight = eng.scene.make_unique_node_id(dirlight);
+
     eng.scene.add_allocate_child(
         eng.scene.root,
         Node::new_light(Light::point(4.0).with_color(Color::new(1.0, 0.01, 0.005, 2.0)))
@@ -173,6 +180,15 @@ fn main() {
                             eng.visual_server.set_render_size_factor(0.5);
                         } else if *key == VirtualKeyCode::Y {
                             eng.visual_server.set_render_size_factor(0.25);
+                        }
+
+                        if *key == VirtualKeyCode::H {
+                            eng.visual_server.unset_fullscreen_texture();
+                        } else if *key == VirtualKeyCode::J {
+                            eng.visual_server.set_depth_fullscreen_texture();
+                        } else if *key == VirtualKeyCode::K {
+                            eng.visual_server
+                                .set_shadow_map_fullscreen_texture(dirlight);
                         }
                     }
                 }

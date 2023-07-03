@@ -13,6 +13,7 @@ use super::{
 
 pub struct Pipeline2d {
     render_text_pipeline: wgpu::RenderPipeline,
+    render_fullscreen_texture_pipeline: wgpu::RenderPipeline,
     data: Pipeline2dData,
 }
 
@@ -38,10 +39,23 @@ impl Pipeline2d {
     ) -> Self {
         let shader_source_handle =
             asset_server.load::<ShaderSource>("src/renderer/shaders/text.wgsl");
-        let shader_source = asset_server.get(shader_source_handle);
+        let shader_source = asset_server.get(shader_source_handle).source().to_string();
+
+        let render_fullscreen_texture_handle =
+            asset_server.load::<ShaderSource>("src/renderer/shaders/fullscreen_texture.wgsl");
+        let render_fullscreen_texture = asset_server
+            .get(render_fullscreen_texture_handle)
+            .source()
+            .to_string();
+
         let shaders = Shaders {
             render_text_source: shader_source_handle,
-            render_text: backend.create_shader_module("render text shader", shader_source.source()),
+            render_text: backend.create_shader_module("render text shader", &shader_source),
+            render_fullscreen_texture_source: render_fullscreen_texture_handle,
+            render_fullscreen_texture: backend.create_shader_module(
+                "render fullscreen texture shader",
+                &render_fullscreen_texture,
+            ),
         };
 
         let bind_group_layouts = BindGroupLayouts {
@@ -67,7 +81,7 @@ impl Pipeline2d {
                     entries: &[
                         wgpu::BindGroupLayoutEntry {
                             binding: 0,
-                            visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                            visibility: wgpu::ShaderStages::VERTEX_FRAGMENT, // FIXME fragment only plz
                             ty: wgpu::BindingType::Texture {
                                 sample_type: wgpu::TextureSampleType::Float { filterable: true },
                                 view_dimension: wgpu::TextureViewDimension::D2,
@@ -83,10 +97,33 @@ impl Pipeline2d {
                         },
                     ],
                 }),
+            fullscreen_texture: backend.device.create_bind_group_layout(
+                &wgpu::BindGroupLayoutDescriptor {
+                    label: Some("fullscreen texture bind group layout"),
+                    entries: &[
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 0,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Texture {
+                                sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                                view_dimension: wgpu::TextureViewDimension::D2,
+                                multisampled: false,
+                            },
+                            count: None,
+                        },
+                        wgpu::BindGroupLayoutEntry {
+                            binding: 1,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
+                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
+                            count: None,
+                        },
+                    ],
+                },
+            ),
         };
 
         let pipeline_layouts = PipelineLayouts {
-            layout: backend
+            text: backend
                 .device
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: Some("2d pipeline layout"),
@@ -96,6 +133,13 @@ impl Pipeline2d {
                     ],
                     push_constant_ranges: &[],
                 }),
+            fullscreen_texture: backend.device.create_pipeline_layout(
+                &wgpu::PipelineLayoutDescriptor {
+                    label: Some("fullscreen texture pipeline layout"),
+                    bind_group_layouts: &[&bind_group_layouts.fullscreen_texture],
+                    push_constant_ranges: &[],
+                },
+            ),
         };
 
         let viewport_bind_group = backend
@@ -144,6 +188,9 @@ impl Pipeline2d {
 
         Self {
             render_text_pipeline: build_render_text_pipeline(&data, backend),
+            render_fullscreen_texture_pipeline: build_render_fullscreen_texture_pipeline(
+                &data, backend,
+            ),
             data,
         }
     }
@@ -180,12 +227,19 @@ impl Pipeline2d {
 
             self.rebuild_pipelines(backend);
         }
+        if changes.contains(self.data.shaders.render_fullscreen_texture_source) {
+            let source = asset_server.get(self.data.shaders.render_fullscreen_texture_source);
+            self.data.shaders.render_fullscreen_texture =
+                backend.create_shader_module("render fullscreen texture shader", source.source());
+
+            self.rebuild_pipelines(backend);
+        }
     }
 
     pub fn render(
         &self,
         encoder: &mut CommandEncoder,
-        render_commands: &[RenderTextCommand],
+        render_commands: &RenderCommands,
         render_target: &RenderTarget,
     ) {
         let (color_attachment, _depth_stencil_attachment) = render_target.render_pass_attachments();
@@ -204,7 +258,13 @@ impl Pipeline2d {
             depth_stencil_attachment: None,
         });
 
-        for render_command in render_commands {
+        if let Some(render_command) = render_commands.texture {
+            render_pass.set_pipeline(&self.render_fullscreen_texture_pipeline);
+            render_pass.set_bind_group(0, render_command.fullscreen_texture_bind_group, &[]);
+            render_pass.draw(0..4, 0..1);
+        }
+
+        for render_command in render_commands.texts {
             render_pass.set_pipeline(&self.render_text_pipeline);
             render_pass.set_bind_group(0, &self.data.viewport_bind_group, &[]);
             render_pass.set_bind_group(1, &self.data.font_texture_bind_group, &[]);
@@ -215,6 +275,8 @@ impl Pipeline2d {
 
     fn rebuild_pipelines(&mut self, backend: &mut Backend) {
         self.render_text_pipeline = build_render_text_pipeline(&self.data, backend);
+        self.render_fullscreen_texture_pipeline =
+            build_render_fullscreen_texture_pipeline(&self.data, backend);
     }
 
     fn build_font_texture_bind_group(
@@ -241,25 +303,63 @@ impl Pipeline2d {
                 ],
             })
     }
+
+    pub fn build_fullscreen_texture_bind_group(
+        &self,
+        texture: &wgpu::Texture,
+        sampler: &wgpu::Sampler,
+        backend: &mut Backend,
+    ) -> wgpu::BindGroup {
+        let texture_view = texture.create_view(&Default::default());
+        backend
+            .device
+            .create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("fullscreen texture bind group"),
+                layout: &self.data.bind_group_layouts.fullscreen_texture,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&texture_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&sampler),
+                    },
+                ],
+            })
+    }
 }
 
 pub struct PipelineLayouts {
-    pub layout: wgpu::PipelineLayout,
+    pub text: wgpu::PipelineLayout,
+    pub fullscreen_texture: wgpu::PipelineLayout,
 }
 
 pub struct BindGroupLayouts {
     pub viewport: wgpu::BindGroupLayout,
     pub text_font: wgpu::BindGroupLayout,
+    pub fullscreen_texture: wgpu::BindGroupLayout,
 }
 
 pub struct Shaders {
     pub render_text_source: Handle<ShaderSource>,
     pub render_text: wgpu::ShaderModule,
+    pub render_fullscreen_texture_source: Handle<ShaderSource>,
+    pub render_fullscreen_texture: wgpu::ShaderModule,
+}
+
+pub struct RenderCommands<'a> {
+    pub texts: &'a [RenderTextCommand<'a>],
+    pub texture: Option<&'a RenderFullscreenTextureCommand<'a>>,
 }
 
 pub struct RenderTextCommand<'a> {
     pub instance_buffer: &'a wgpu::Buffer,
     pub instance_count: u32,
+}
+
+pub struct RenderFullscreenTextureCommand<'a> {
+    pub fullscreen_texture_bind_group: &'a wgpu::BindGroup,
 }
 
 fn build_render_text_pipeline(
@@ -270,7 +370,7 @@ fn build_render_text_pipeline(
         .device
         .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("render text pipeline"),
-            layout: Some(&pipeline_data.pipeline_layouts.layout),
+            layout: Some(&pipeline_data.pipeline_layouts.text),
             vertex: wgpu::VertexState {
                 module: &pipeline_data.shaders.render_text,
                 entry_point: "vs_main",
@@ -278,6 +378,46 @@ fn build_render_text_pipeline(
             },
             fragment: Some(wgpu::FragmentState {
                 module: &pipeline_data.shaders.render_text,
+                entry_point: "fs_main",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: pipeline_data.render_target_info.color_format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleStrip,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back),
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState {
+                count: pipeline_data.render_target_info.sample_count,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview: None,
+        })
+}
+
+fn build_render_fullscreen_texture_pipeline(
+    pipeline_data: &Pipeline2dData,
+    backend: &mut Backend,
+) -> wgpu::RenderPipeline {
+    backend
+        .device
+        .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("render fullscreen texture pipeline"),
+            layout: Some(&pipeline_data.pipeline_layouts.fullscreen_texture),
+            vertex: wgpu::VertexState {
+                module: &pipeline_data.shaders.render_fullscreen_texture,
+                entry_point: "vs_main",
+                buffers: &[],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &pipeline_data.shaders.render_fullscreen_texture,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
                     format: pipeline_data.render_target_info.color_format,

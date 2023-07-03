@@ -446,6 +446,20 @@ impl Backend {
         })
     }
 
+    pub fn create_non_filtering_sampler(&mut self) -> wgpu::Sampler {
+        self.device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("show texture sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToEdge,
+            address_mode_v: wgpu::AddressMode::ClampToEdge,
+            address_mode_w: wgpu::AddressMode::ClampToEdge,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            anisotropy_clamp: 1,
+            ..Default::default()
+        })
+    }
+
     pub fn render_texture(&mut self, texture: &wgpu::Texture) -> Result<(), wgpu::SurfaceError> {
         let surface_texture = self.surface.get_current_texture()?;
         let surface_view = surface_texture.texture.create_view(&Default::default());
