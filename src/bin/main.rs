@@ -65,8 +65,8 @@ fn main() {
         Node::new_light(Light::directional().with_color(Color::new(1.0, 0.9, 0.8, 1.0)))
             .with_transform(
                 Affine3A::look_to_lh(
-                    Vec3::new(-3.0, 30.0, -12.0),
-                    Vec3::new(0.1, -1.0, 0.4),
+                    Vec3::new(-1.5, 20.0, -6.0),
+                    Vec3::new(0.05, -1.0, 0.2),
                     Vec3::Y,
                 )
                 .inverse(),

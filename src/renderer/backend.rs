@@ -24,7 +24,6 @@ pub struct Backend {
     //
     material_bind_group_layout: wgpu::BindGroupLayout,
     model_bind_group_layout: wgpu::BindGroupLayout,
-    light_bind_group_layout: wgpu::BindGroupLayout,
 }
 
 impl Backend {
@@ -134,20 +133,6 @@ impl Backend {
                     count: None,
                 }],
             });
-        let light_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("light bind group layout"),
-                entries: &[wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                }],
-            });
 
         let show_texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -244,7 +229,6 @@ impl Backend {
             show_texture_uniform_buffer,
             material_bind_group_layout,
             model_bind_group_layout,
-            light_bind_group_layout,
         }
     }
 
@@ -353,14 +337,31 @@ impl Backend {
         })
     }
 
-    pub fn create_light_bind_group(&mut self, uniform_buffer: &wgpu::Buffer) -> wgpu::BindGroup {
+    pub fn create_light_bind_group(
+        &mut self,
+        uniform_buffer: &wgpu::Buffer,
+        shadow_map: &wgpu::Texture,
+        sampler: &wgpu::Sampler,
+        layout: &wgpu::BindGroupLayout,
+    ) -> wgpu::BindGroup {
+        let shadow_map_view = shadow_map.create_view(&Default::default());
         self.device.create_bind_group(&BindGroupDescriptor {
             label: Some("light bind group"),
-            layout: &self.light_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: uniform_buffer.as_entire_binding(),
-            }],
+            layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: uniform_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&shadow_map_view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(sampler),
+                },
+            ],
         })
     }
 

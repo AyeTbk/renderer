@@ -281,15 +281,6 @@ impl VisualServer {
             LightKind::Point { .. } => 1,
         };
 
-        let uniform = LightUniform {
-            transform: Mat4::from(transform).to_cols_array(),
-            color: light.color.to_array(),
-            radius: light.radius().unwrap_or_default(),
-            kind,
-            _padding: Default::default(),
-        };
-        let uniform_buffer = self.backend.create_uniform_buffer(uniform);
-        let bind_group = self.backend.create_light_bind_group(&uniform_buffer);
         let shadow_map = self
             .backend
             .device
@@ -310,17 +301,18 @@ impl VisualServer {
             });
 
         let ortho_size = 16.0;
+        let shadow_map_projection = Mat4::orthographic_lh(
+            -ortho_size,
+            ortho_size,
+            -ortho_size,
+            ortho_size,
+            0.05,
+            100.0,
+        );
+        let shadow_map_view = Mat4::from(transform.inverse());
         let shadow_map_scene_uniform = SceneUniform {
-            projection: Mat4::orthographic_lh(
-                -ortho_size,
-                ortho_size,
-                -ortho_size,
-                ortho_size,
-                0.05,
-                100.0,
-            )
-            .to_cols_array(),
-            view: Mat4::from(transform.inverse()).to_cols_array(),
+            projection: shadow_map_projection.to_cols_array(),
+            view: shadow_map_view.to_cols_array(),
             camera_transform: Mat4::from(transform).to_cols_array(),
             ambient_light: [0.0, 0.0, 0.0, 0.0],
         };
@@ -338,11 +330,31 @@ impl VisualServer {
                     }],
                 });
 
+        let uniform = LightUniform {
+            transform: Mat4::from(transform).to_cols_array(),
+            world_to_light: Mat4::from(shadow_map_projection * shadow_map_view).to_cols_array(),
+            color: light.color.to_array(),
+            radius: light.radius().unwrap_or_default(),
+            kind,
+            _padding: Default::default(),
+        };
+        let uniform_buffer = self.backend.create_uniform_buffer(uniform);
+
+        let sampler = self.backend.create_non_filtering_sampler();
+
+        let bind_group = self.backend.create_light_bind_group(
+            &uniform_buffer,
+            &shadow_map,
+            &sampler,
+            &self.pipeline3d.data.bind_group_layouts.light,
+        );
+
         self.render_scene.lights.insert(
             id,
             RenderLight {
                 bind_group,
                 uniform_buffer,
+                sampler,
                 shadow_map_scene_bind_group,
                 shadow_map_scene_uniform_buffer,
                 shadow_map,
@@ -667,6 +679,8 @@ struct RenderLight {
     bind_group: wgpu::BindGroup,
     #[allow(unused)]
     uniform_buffer: wgpu::Buffer,
+    #[allow(unused)]
+    sampler: wgpu::Sampler,
     shadow_map_scene_bind_group: wgpu::BindGroup,
     #[allow(unused)]
     shadow_map_scene_uniform_buffer: wgpu::Buffer,
@@ -721,6 +735,7 @@ struct MaterialUniform {
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct LightUniform {
     transform: [f32; 16],
+    world_to_light: [f32; 16],
     color: [f32; 4],
     radius: f32,
     kind: u32, // Directional=0, Point=1

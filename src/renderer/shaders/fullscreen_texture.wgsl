@@ -35,8 +35,8 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
 }
 
 fn linearize_depth(depth: f32) -> f32 {
-    let near = 0.05;
-    let far = 100.0;
+    let near = 0.5;
+    let far = 50.0;
 
     return (2.0 * near) / (far + near - depth * (far - near));
 }
