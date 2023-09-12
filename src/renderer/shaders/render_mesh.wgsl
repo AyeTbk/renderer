@@ -187,7 +187,7 @@ fn compute_light_occlusion(frag_pos: vec3f) -> f32 {
     shadow_map_coords = vec2f(shadow_map_coords.x, 1.0 - shadow_map_coords.y);
 
     let occluder_depth = textureSample(shadow_map, shadow_map_sampler, shadow_map_coords.xy).r;
-    let bias = 0.00125;
+    let bias = 0.00115;
     let current_depth = ndc_coords.z - bias;
 
     var occlusion = 0.0;

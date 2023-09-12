@@ -285,7 +285,7 @@ impl VisualServer {
             .backend
             .device
             .create_texture(&wgpu::TextureDescriptor {
-                label: Some("depth texture"),
+                label: Some("shadow map texture"),
                 size: wgpu::Extent3d {
                     width: 1024,
                     height: 1024,

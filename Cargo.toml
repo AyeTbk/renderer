@@ -8,7 +8,7 @@ edition = "2021"
 [dependencies]
 
 # Graphics API
-wgpu = "0.16"
+wgpu = "0.17"
 
 # Math types
 glam = "0.24"
