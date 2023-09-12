@@ -70,7 +70,11 @@ fn main() {
                     Vec3::Y,
                 )
                 .inverse(),
-            ),
+            )
+            .with_update(|node, ctx| {
+                let angle = ctx.time.delta * 0.025;
+                node.transform = Affine3A::from_rotation_y(angle) * node.transform;
+            }),
     );
     let dirlight = eng.scene.make_unique_node_id(dirlight);
 
