@@ -1,6 +1,6 @@
 use asset_image::Image;
 use glam::{Affine3A, UVec2, Vec2, Vec3};
-use winit::{event::VirtualKeyCode, window::Window};
+use winit::{keyboard::KeyCode, window::Window};
 
 use crate::{
     arena::Handle,
@@ -72,12 +72,9 @@ impl Engine {
         }
 
         self.input.movement = Vec3::new(
-            self.input
-                .axis_strength(VirtualKeyCode::D, VirtualKeyCode::A),
-            self.input
-                .axis_strength(VirtualKeyCode::Q, VirtualKeyCode::Z),
-            self.input
-                .axis_strength(VirtualKeyCode::W, VirtualKeyCode::S),
+            self.input.axis_strength(KeyCode::KeyD, KeyCode::KeyA),
+            self.input.axis_strength(KeyCode::KeyQ, KeyCode::KeyZ),
+            self.input.axis_strength(KeyCode::KeyW, KeyCode::KeyS),
         );
 
         self.input.fast = self.input.mod_shift;

@@ -247,7 +247,7 @@ impl Pipeline2d {
         let color_attachment = wgpu::RenderPassColorAttachment {
             ops: wgpu::Operations {
                 load: wgpu::LoadOp::Load,
-                store: true,
+                store: wgpu::StoreOp::Store,
             },
             ..color_attachment
         };
@@ -256,6 +256,7 @@ impl Pipeline2d {
             label: Some("2d render pass"),
             color_attachments: &[Some(color_attachment)],
             depth_stencil_attachment: None,
+            ..Default::default()
         });
 
         if let Some(render_command) = render_commands.texture {

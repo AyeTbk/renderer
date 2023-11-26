@@ -271,7 +271,7 @@ impl Pipeline3d {
                 view: &depth_view,
                 depth_ops: Some(wgpu::Operations {
                     load: wgpu::LoadOp::Clear(1.0),
-                    store: true,
+                    store: wgpu::StoreOp::Store,
                 }),
                 stencil_ops: None,
             };
@@ -279,6 +279,7 @@ impl Pipeline3d {
                 label: Some("shadow map render pass"),
                 color_attachments: &[],
                 depth_stencil_attachment: Some(depth_stencil_attachment),
+                ..Default::default()
             });
 
             render_pass.set_pipeline(&self.pipelines.directional_shadow_map);
@@ -306,6 +307,7 @@ impl Pipeline3d {
             label: Some("render pass"),
             color_attachments: &[Some(color_attachment)],
             depth_stencil_attachment: Some(depth_stencil_attachment),
+            ..Default::default()
         });
 
         // Ambient and depth

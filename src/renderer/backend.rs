@@ -13,7 +13,7 @@ use wgpu::{
 pub struct Backend {
     render_size: UVec2,
     //
-    pub surface: wgpu::Surface,
+    pub surface: wgpu::Surface<'static>,
     pub surface_config: wgpu::SurfaceConfiguration,
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
@@ -41,7 +41,7 @@ impl Backend {
         });
         // # Safety
         // The surface must not outlive the window that created it.
-        let surface = unsafe { instance.create_surface(window) }.unwrap();
+        let surface = unsafe { instance.create_surface_from_raw(window) }.unwrap();
 
         // An adapter represents an actual GPUxRendererAPI combo.
         let adapter: wgpu::Adapter = instance
@@ -501,10 +501,11 @@ impl Backend {
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color::RED),
-                        store: true,
+                        store: wgpu::StoreOp::Store,
                     },
                 })],
                 depth_stencil_attachment: None,
+                ..Default::default()
             });
 
             render_pass.set_pipeline(&self.show_texture_pipeline);

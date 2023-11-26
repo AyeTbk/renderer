@@ -822,7 +822,7 @@ impl RenderTarget {
             resolve_target: resolve_view,
             ops: wgpu::Operations {
                 load: wgpu::LoadOp::Clear(Color::GRUE.to_wgpu()),
-                store: true,
+                store: wgpu::StoreOp::Store,
             },
         };
 
@@ -830,7 +830,7 @@ impl RenderTarget {
             view: depth_view,
             depth_ops: Some(wgpu::Operations {
                 load: wgpu::LoadOp::Clear(1.0),
-                store: true,
+                store: wgpu::StoreOp::Store,
             }),
             stencil_ops: None,
         };

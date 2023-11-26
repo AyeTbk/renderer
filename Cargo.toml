@@ -8,13 +8,15 @@ edition = "2021"
 [dependencies]
 
 # Graphics API
-wgpu = "0.17"
+#wgpu = "0.17"
+wgpu = { git = "https://github.com/gfx-rs/wgpu.git" }
 
 # Math types
 glam = "0.24"
 
 # Windowing
-winit = "0.28"
+#winit = "0.28"
+winit = "0.29"
 
 # Loading assets
 gltf = "1.1"
