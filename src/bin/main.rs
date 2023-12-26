@@ -28,26 +28,27 @@ fn main() {
     // Load scene
     let scene = eng
         .asset_server
-        .load_scene("data/scenes/sponza/Sponza.gltf")
+        // .load_scene("data/scenes/sponza/Sponza.gltf")
         // .load_scene("data/scenes/flight/FlightHelmet.gltf")
         // .load_scene("data/scenes/suzanne/suzanne.gltf")
+        .load_scene("data/scenes/the-sphere.glb")
         // .load_scene("data/scenes/tri.glb")
         // .load_scene("data/scenes/uvs.glb")
         // .load_scene("data/scenes/checker-world.glb")
         .unwrap();
     eng.scene = eng.asset_server.get(scene).clone();
 
-    let helmet = eng
-        .asset_server
-        .load_scene("data/scenes/flight/FlightHelmet.gltf")
-        .unwrap();
-    let helmet_scene = eng.asset_server.get(helmet).clone();
-
-    eng.scene.add_allocate_child(
-        eng.scene.root,
-        Node::new_scene(helmet_scene)
-            .with_transform(Affine3A::from_rotation_y(-std::f32::consts::FRAC_PI_2)),
-    );
+    // = Load extra subscene =
+    // let helmet = eng
+    //     .asset_server
+    //     .load_scene("data/scenes/flight/FlightHelmet.gltf")
+    //     .unwrap();
+    // let helmet_scene = eng.asset_server.get(helmet).clone();
+    // eng.scene.add_allocate_child(
+    //     eng.scene.root,
+    //     Node::new_scene(helmet_scene)
+    //         .with_transform(Affine3A::from_rotation_y(-std::f32::consts::FRAC_PI_2)),
+    // );
 
     eng.scene.add_allocate_child(
         eng.scene.root,
@@ -63,7 +64,7 @@ fn main() {
     // Lights
     let dirlight = eng.scene.add_allocate_child(
         eng.scene.root,
-        Node::new_light(Light::directional().with_color(Color::new(1.0, 0.9, 0.8, 1.0)))
+        Node::new_light(Light::directional().with_color(Color::new(1.0, 0.9, 0.8, 0.9)))
             .with_transform(
                 Affine3A::look_to_lh(
                     Vec3::new(-1.5, 20.0, -6.0),
@@ -79,19 +80,34 @@ fn main() {
     );
     let dirlight = eng.scene.make_unique_node_id(dirlight);
 
-    eng.scene.add_allocate_child(
+    let dirlight2 = eng.scene.add_allocate_child(
         eng.scene.root,
-        Node::new_light(Light::point(4.0).with_color(Color::new(1.0, 0.01, 0.005, 2.0)))
-            .with_transform(Affine3A::from_translation(Vec3::new(0.0, 1.0, 1.0))),
+        Node::new_light(Light::directional().with_color(Color::new(0.2, 0.3, 1.0, 0.5)))
+            .with_transform(
+                Affine3A::look_to_lh(
+                    Vec3::new(1.5, 25.0, 6.0),
+                    Vec3::new(-0.05, -0.5, -0.2),
+                    Vec3::Y,
+                )
+                .inverse(),
+            ),
     );
+    eng.scene.make_unique_node_id(dirlight2);
+
+    // = Point light =
+    // eng.scene.add_allocate_child(
+    //     eng.scene.root,
+    //     Node::new_light(Light::point(4.0).with_color(Color::new(1.0, 0.01, 0.005, 2.0)))
+    //         .with_transform(Affine3A::from_translation(Vec3::new(0.0, 1.0, 1.0))),
+    // );
 
     // Setup first person camera
     eng.scene.add_allocate_child(
         eng.scene.root,
         Node::new_camera(Default::default())
             .with_transform(
-                Affine3A::from_rotation_y(-std::f32::consts::FRAC_PI_2)
-                    * Affine3A::from_translation(Vec3::new(0.0, 1.0, 0.0)),
+                Affine3A::from_translation(Vec3::new(3.0, 2.0, -3.0))
+                    * Affine3A::from_rotation_y(-0.8),
             )
             .with_update(|this, ctx| {
                 // Mouse look

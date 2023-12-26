@@ -146,12 +146,13 @@ fn fs_main_blinn_phong(in: VertexOutput) -> @location(0) vec4f {
     let from_frag_to_view_dir = normalize(scene.camera_transform.w.xyz - in.frag_pos);
     var light_contribution = vec3f(0.0);
     if light.kind == LIGHT_KIND_DIRECTIONAL {
-        let occlusion = compute_light_occlusion(in.frag_pos);
+        let light_direction = light.transform.z.xyz;
+        let occlusion = compute_light_occlusion(in.frag_pos, normal, light_direction);
         light_contribution = compute_light_blinn_phong(
             base_color.rgb,
             normal,
             from_frag_to_view_dir,
-            light.transform.z.xyz,
+            light_direction,
             light.color.rgb,
             light.color.a * (1.0 - occlusion),
             8.0,
@@ -178,22 +179,43 @@ fn fs_main_blinn_phong(in: VertexOutput) -> @location(0) vec4f {
 }
 
 // https://learnopengl.com/Advanced-Lighting/Shadows/Shadow-Mapping
-fn compute_light_occlusion(frag_pos: vec3f) -> f32 {
-    let light_space_frag_pos = light.world_to_light * vec4f(frag_pos, 1.0); // TODO this can be calculated in the vertex shader
+fn compute_light_occlusion(frag_pos: vec3f, normal: vec3f, light_dir: vec3f) -> f32 {
+    // These bias values are pretty arbitrary... TODO learn how to properly fix shadow acne.
+    let depth_bias = 0.1;
+    let depth_offset = -light_dir * depth_bias;
+
+    let normal_bias = 2.0;
+    let normal_offset = normal * normal_bias * 0.2;
+
+    let bias_offset = (depth_offset + normal_offset);
+
+    let biased_frag_pos = frag_pos + bias_offset;
+    let light_space_frag_pos = light.world_to_light * vec4f(biased_frag_pos, 1.0); // TODO this can be calculated in the vertex shader
     
     let ndc_coords = light_space_frag_pos.xyz / light_space_frag_pos.w;
-    
+
     var shadow_map_coords = (ndc_coords.xy + 1.0) * 0.5;
     shadow_map_coords = vec2f(shadow_map_coords.x, 1.0 - shadow_map_coords.y);
 
-    let occluder_depth = textureSample(shadow_map, shadow_map_sampler, shadow_map_coords.xy).r;
-    let bias = 0.00115;
-    let current_depth = ndc_coords.z - bias;
-
+    let shadow_map_size = vec2f(textureDimensions(shadow_map));
+    let texel_size = vec2f(1.0) / shadow_map_size;
+ 
     var occlusion = 0.0;
-    if current_depth > occluder_depth {
-        occlusion = 1.0;
+    var sample_count = 0.0;
+    for (var x = -1; x <= 1; x++) {
+        for (var y = -1; y <= 1; y++) {
+            sample_count += 1.0;
+
+            let sample_offset = vec2f(vec2(x, y)) * texel_size;
+            let occluder_depth = textureSample(shadow_map, shadow_map_sampler, shadow_map_coords.xy + sample_offset).r;
+            let current_depth = ndc_coords.z;
+
+            if current_depth > occluder_depth {
+                occlusion += 1.0;
+            }
+        }
     }
+    occlusion = occlusion / sample_count;
 
     return occlusion;
 }
