@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use asset_image::Image;
 use glam::{Affine3A, Mat3A, Quat, UVec2, Vec2, Vec3, Vec3A};
 use renderer::{Color, Engine, Light, Node};
@@ -11,10 +13,12 @@ use winit::{
 
 fn main() {
     let event_loop = EventLoop::new().unwrap();
-    let window = WindowBuilder::new()
-        .with_title("renderer")
-        .build(&event_loop)
-        .unwrap();
+    let window = Arc::new(
+        WindowBuilder::new()
+            .with_title("renderer")
+            .build(&event_loop)
+            .unwrap(),
+    );
 
     let mut cursor_grabbed = false;
 

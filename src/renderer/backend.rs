@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use glam::UVec2;
 use pollster::FutureExt;
 use wgpu::{
@@ -30,7 +32,7 @@ impl Backend {
     // NOTE: Read up on "reversed depth buffer trick". Might be interesting.
     pub const DEPTH_TEXTURE_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
-    pub fn new(window: &winit::window::Window) -> Self {
+    pub fn new(window: &Arc<winit::window::Window>) -> Self {
         let _ = env_logger::try_init();
 
         let render_size: UVec2 = (window.inner_size().width, window.inner_size().height).into();
@@ -41,7 +43,7 @@ impl Backend {
         });
         // # Safety
         // The surface must not outlive the window that created it.
-        let surface = unsafe { instance.create_surface_from_raw(window) }.unwrap();
+        let surface = instance.create_surface(window.clone()).unwrap();
 
         // An adapter represents an actual GPUxRendererAPI combo.
         let adapter: wgpu::Adapter = instance

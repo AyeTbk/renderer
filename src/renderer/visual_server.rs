@@ -1,4 +1,7 @@
-use std::collections::{hash_map::Entry, HashMap};
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    sync::Arc,
+};
 
 use glam::{Affine3A, Mat4, UVec2, Vec2, Vec3Swizzles};
 
@@ -39,7 +42,7 @@ pub struct VisualServer {
 }
 
 impl VisualServer {
-    pub fn new(window: &winit::window::Window, asset_server: &mut AssetServer) -> Self {
+    pub fn new(window: &Arc<winit::window::Window>, asset_server: &mut AssetServer) -> Self {
         let mut backend = Backend::new(window);
 
         let viewport_uniform = ViewportUniform {
@@ -235,11 +238,6 @@ impl VisualServer {
     }
 
     pub fn set_depth_fullscreen_texture(&mut self) {
-        // let Some(light) = self.render_scene.lights.get(&light_id) else {
-        //     eprintln!("warning: {}:{}: no such light registered", file!(), line!());
-        //     return;
-        // };
-        // let texture = &light.shadow_map;
         let texture = &self.render_target.texture.depth();
         let sampler = self.backend.create_non_filtering_sampler();
         let bind_group = self.pipeline2d.build_fullscreen_texture_bind_group(
@@ -281,6 +279,7 @@ impl VisualServer {
             LightKind::Point { .. } => 1,
         };
 
+        // TODO look into variance shadow maps (VSMs)
         let shadow_map = self
             .backend
             .device

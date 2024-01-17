@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use asset_image::Image;
 use glam::{Affine3A, UVec2, Vec2, Vec3};
 use winit::{keyboard::KeyCode, window::Window};
@@ -18,7 +20,7 @@ pub struct Engine {
 }
 
 impl Engine {
-    pub fn new(window: &Window) -> Self {
+    pub fn new(window: &Arc<Window>) -> Self {
         let mut asset_server = AssetServer::new();
         let gizmo_image = asset_server.load("data/gizmo_dummy.png");
         Self {
