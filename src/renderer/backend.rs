@@ -26,6 +26,8 @@ pub struct Backend {
     //
     material_bind_group_layout: wgpu::BindGroupLayout,
     model_bind_group_layout: wgpu::BindGroupLayout,
+    //
+    show_texture_sampler: wgpu::Sampler,
 }
 
 impl Backend {
@@ -82,6 +84,7 @@ impl Backend {
             width: render_size.x,
             height: render_size.y,
             present_mode: wgpu::PresentMode::AutoVsync, // surface_capabilities.present_modes[0],
+            desired_maximum_frame_latency: 2,
             alpha_mode: surface_capabilities.alpha_modes[0],
             view_formats: vec![],
         };
@@ -220,6 +223,18 @@ impl Backend {
                 multiview: None,
             });
 
+        let show_texture_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("show texture sampler"),
+            address_mode_u: wgpu::AddressMode::Repeat,
+            address_mode_v: wgpu::AddressMode::Repeat,
+            address_mode_w: wgpu::AddressMode::Repeat,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Linear,
+            mipmap_filter: wgpu::FilterMode::Nearest,
+            anisotropy_clamp: 1,
+            ..Default::default()
+        });
+
         Self {
             render_size,
             surface,
@@ -231,6 +246,7 @@ impl Backend {
             show_texture_uniform_buffer,
             material_bind_group_layout,
             model_bind_group_layout,
+            show_texture_sampler,
         }
     }
 
@@ -437,21 +453,7 @@ impl Backend {
         })
     }
 
-    pub fn create_show_texture_sampler(&mut self) -> wgpu::Sampler {
-        self.device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("show texture sampler"),
-            address_mode_u: wgpu::AddressMode::Repeat,
-            address_mode_v: wgpu::AddressMode::Repeat,
-            address_mode_w: wgpu::AddressMode::Repeat,
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Nearest,
-            anisotropy_clamp: 1,
-            ..Default::default()
-        })
-    }
-
-    pub fn create_non_filtering_sampler(&mut self) -> wgpu::Sampler {
+    pub fn create_sampler_non_filtering(&mut self) -> wgpu::Sampler {
         self.device.create_sampler(&wgpu::SamplerDescriptor {
             label: Some("show texture sampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
@@ -470,7 +472,6 @@ impl Backend {
         let surface_view = surface_texture.texture.create_view(&Default::default());
 
         let texture_view = texture.create_view(&Default::default());
-        let sampler = self.create_show_texture_sampler();
 
         let bind_group = self.device.create_bind_group(&BindGroupDescriptor {
             label: Some("show texture bind group"),
@@ -486,7 +487,7 @@ impl Backend {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: wgpu::BindingResource::Sampler(&sampler),
+                    resource: wgpu::BindingResource::Sampler(&self.show_texture_sampler),
                 },
             ],
         });

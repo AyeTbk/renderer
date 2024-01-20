@@ -8,8 +8,7 @@ edition = "2021"
 [dependencies]
 
 # Graphics API
-#wgpu = "0.17"
-wgpu = { git = "https://github.com/gfx-rs/wgpu.git" }
+wgpu = "0.19"
 
 # Math types
 glam = "0.24"

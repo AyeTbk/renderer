@@ -35,6 +35,7 @@ pub struct VisualServer {
     font_handle: Option<Handle<Image>>,
     default_material: Option<Handle<Material>>,
     quad_mesh: Option<Handle<Mesh>>,
+    samplers: Samplers,
     //
     render_target: RenderTarget,
     pipeline3d: Pipeline3d,
@@ -63,6 +64,11 @@ impl VisualServer {
 
         let white_texture = backend.create_color_texture(1, 1, &[255, 255, 255, 255], 1);
         let font_texture = backend.create_color_texture(1, 1, &[255, 255, 0, 255], 1);
+
+        let samplers = Samplers {
+            unfiltered: backend.create_sampler_non_filtering(),
+            filtered: backend.create_sampler(),
+        };
 
         let render_target = create_render_target(
             backend.render_size(),
@@ -99,6 +105,7 @@ impl VisualServer {
             font_handle: None,
             quad_mesh: None,
             default_material: None,
+            samplers,
             //
             render_target,
             pipeline3d,
@@ -239,7 +246,7 @@ impl VisualServer {
 
     pub fn set_depth_fullscreen_texture(&mut self) {
         let texture = &self.render_target.texture.depth();
-        let sampler = self.backend.create_non_filtering_sampler();
+        let sampler = self.backend.create_sampler_non_filtering();
         let bind_group = self.pipeline2d.build_fullscreen_texture_bind_group(
             texture,
             &sampler,
@@ -257,7 +264,7 @@ impl VisualServer {
             return;
         };
         let texture = &light.shadow_map;
-        let sampler = self.backend.create_non_filtering_sampler();
+        let sampler = self.backend.create_sampler_non_filtering();
         let bind_group = self.pipeline2d.build_fullscreen_texture_bind_group(
             texture,
             &sampler,
@@ -339,12 +346,10 @@ impl VisualServer {
         };
         let uniform_buffer = self.backend.create_uniform_buffer(uniform);
 
-        let sampler = self.backend.create_non_filtering_sampler();
-
         let bind_group = self.backend.create_light_bind_group(
             &uniform_buffer,
             &shadow_map,
-            &sampler,
+            &self.samplers.unfiltered,
             &self.pipeline3d.data.bind_group_layouts.light,
         );
 
@@ -353,7 +358,6 @@ impl VisualServer {
             RenderLight {
                 bind_group,
                 uniform_buffer,
-                sampler,
                 shadow_map_scene_bind_group,
                 shadow_map_scene_uniform_buffer,
                 shadow_map,
@@ -583,20 +587,18 @@ impl VisualServer {
         } else {
             None
         };
-        let sampler = self.backend.create_sampler();
 
         let base_color_texture_ref = base_color_texture.unwrap_or(&self.white_texture);
 
         let bind_group = self.backend.create_material_bind_group(
             &uniform_buffer,
             base_color_texture_ref,
-            &sampler,
+            &self.samplers.filtered,
         );
         let render_material = RenderMaterial {
             bind_group,
             uniform_buffer,
             used_textures: material.base_color_image.into_iter().collect(),
-            sampler,
         };
 
         self.render_scene.materials.insert(handle, render_material);
@@ -675,12 +677,11 @@ struct RenderText {
 }
 
 struct RenderLight {
-    bind_group: wgpu::BindGroup,
+    bind_group: wgpu::BindGroup, // FIXME The bind group can be shared among all lights
     #[allow(unused)]
     uniform_buffer: wgpu::Buffer,
     #[allow(unused)]
-    sampler: wgpu::Sampler,
-    shadow_map_scene_bind_group: wgpu::BindGroup,
+    shadow_map_scene_bind_group: wgpu::BindGroup, // FIXME shadow map scene bind group can be shared among all lights?
     #[allow(unused)]
     shadow_map_scene_uniform_buffer: wgpu::Buffer,
     shadow_map: wgpu::Texture,
@@ -698,7 +699,7 @@ struct RenderSubmesh {
 }
 
 struct RenderMeshInstance {
-    model_bind_group: wgpu::BindGroup,
+    model_bind_group: wgpu::BindGroup, // FIXME The bind group can be shared among all mesh instances
     #[allow(unused)]
     model_uniform_buffer: wgpu::Buffer,
     mesh: Handle<Mesh>,
@@ -717,8 +718,6 @@ struct RenderMaterial {
     uniform_buffer: wgpu::Buffer,
     #[allow(unused)]
     used_textures: Vec<Handle<Image>>,
-    #[allow(unused)]
-    sampler: wgpu::Sampler,
 }
 
 #[repr(C)]
@@ -909,4 +908,9 @@ fn create_render_target(
         sample_count,
         texture,
     }
+}
+
+struct Samplers {
+    unfiltered: wgpu::Sampler,
+    filtered: wgpu::Sampler,
 }
