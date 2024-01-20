@@ -402,26 +402,36 @@ impl VisualServer {
         let model_uniform = ModelUniform {
             transform: Mat4::from(transform).to_cols_array(),
         };
-        let model_uniform_buffer = self.backend.create_uniform_buffer(model_uniform);
-        let model_bind_group = self.backend.create_model_bind_group(&model_uniform_buffer);
 
-        let material = asset_server.add(Material {
-            base_color,
-            base_color_image: Some(image_handle),
-            billboard_mode: BillboardMode::On,
-            unlit: true,
-        });
-        self.register_material(material, asset_server);
+        if let Some(mesh_instance) = self.render_scene.mesh_instances.get(&id) {
+            self.backend
+                .update_uniform_buffer(&mesh_instance.model_uniform_buffer, model_uniform);
 
-        self.render_scene.mesh_instances.insert(
-            id,
-            RenderMeshInstance {
-                model_uniform_buffer,
-                model_bind_group,
-                mesh: self.quad_mesh.unwrap(),
-                material_override: Some(material),
-            },
-        );
+            let material = asset_server.get_mut(mesh_instance.material_override.unwrap());
+            material.base_color = base_color;
+            material.base_color_image = Some(image_handle);
+        } else {
+            let model_uniform_buffer = self.backend.create_uniform_buffer(model_uniform);
+            let model_bind_group = self.backend.create_model_bind_group(&model_uniform_buffer);
+
+            let material = asset_server.add(Material {
+                base_color,
+                base_color_image: Some(image_handle),
+                billboard_mode: BillboardMode::On,
+                unlit: true,
+            });
+            self.register_material(material, asset_server);
+
+            self.render_scene.mesh_instances.insert(
+                id,
+                RenderMeshInstance {
+                    model_uniform_buffer,
+                    model_bind_group,
+                    mesh: self.quad_mesh.unwrap(),
+                    material_override: Some(material),
+                },
+            );
+        }
     }
 
     pub fn set_text(&mut self, id: UniqueNodeId, transform: &Affine3A, text: &[u8], size: f32) {
