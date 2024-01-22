@@ -3,7 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use glam::{Affine3A, Mat4, UVec2, Vec2, Vec3Swizzles};
+use glam::{Affine3A, Mat4, UVec2, Vec2, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles};
 
 // TODO Find ways to reduce coupling between the renderer and the rest of the engine, to
 // eventually make it easy to extract in a separate crate (mostly in hopes of getting
@@ -25,7 +25,7 @@ use super::{
 
 pub struct VisualServer {
     backend: Backend,
-    render_size_factor: f32,
+    settings: Settings,
     //
     viewport_uniform_buffer: wgpu::Buffer,
     render_scene: RenderScene,
@@ -68,6 +68,7 @@ impl VisualServer {
         let samplers = Samplers {
             unfiltered: backend.create_sampler_non_filtering(),
             filtered: backend.create_sampler(),
+            shadow_map: backend.create_sampler_shadow_map(),
         };
 
         let render_target = create_render_target(
@@ -95,7 +96,10 @@ impl VisualServer {
 
         let mut this = Self {
             backend,
-            render_size_factor: 1.0,
+            settings: Settings {
+                render_size_factor: 1.0,
+                shadow_cascades: vec![(0.0, 0.05), (0.05, 0.2), (0.2, 1.0)],
+            },
             //
             viewport_uniform_buffer,
             render_scene: Default::default(),
@@ -128,7 +132,7 @@ impl VisualServer {
     }
 
     pub fn set_render_size_factor(&mut self, factor: f32) {
-        self.render_size_factor = factor;
+        self.settings.render_size_factor = factor;
 
         self.recreate_render_target();
     }
@@ -154,14 +158,21 @@ impl VisualServer {
     }
 
     pub fn set_camera(&mut self, transform: &Affine3A, camera: &Camera) {
-        self.render_scene_data.uniform.projection = camera.projection_matrix().to_cols_array();
-        self.render_scene_data.uniform.view = Mat4::from(transform.inverse()).to_cols_array();
+        let proj = camera.projection_matrix();
+        let view = Mat4::from(transform.inverse());
+
+        self.render_scene.inv_projection_view = (proj * view).inverse();
+
+        self.render_scene_data.uniform.projection = proj.to_cols_array();
+        self.render_scene_data.uniform.view = view.to_cols_array();
         self.render_scene_data.uniform.camera_transform = Mat4::from(*transform).to_cols_array();
 
         self.backend.update_uniform_buffer(
             &self.render_scene_data.uniform_buffer,
             self.render_scene_data.uniform,
         );
+
+        // FIXME TODO recompute directional lights shadow cascades
     }
 
     pub fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
@@ -190,8 +201,12 @@ impl VisualServer {
         for light in self.render_scene.lights.values() {
             render_commands_lights.push(RenderCommandLight {
                 bind_group: &light.bind_group,
-                shadow_map_scene_bind_group: &light.shadow_map_scene_bind_group,
-                shadow_map: &light.shadow_map,
+                cascades_bind_groups: light
+                    .shadow_cascades
+                    .iter()
+                    .map(|sc| &sc.bind_group)
+                    .collect(),
+                shadow_maps: &light.shadow_map,
             });
         }
 
@@ -265,10 +280,11 @@ impl VisualServer {
         };
         let texture = &light.shadow_map;
         let sampler = self.backend.create_sampler_non_filtering();
-        let bind_group = self.pipeline2d.build_fullscreen_texture_bind_group(
+        let bind_group = self.pipeline2d.build_fullscreen_texture_array_bind_group(
             texture,
             &sampler,
             &mut self.backend,
+            0,
         );
         self.render_scene.fullscreen_texture = Some(RenderFullscreenTexture {
             bind_group,
@@ -295,7 +311,7 @@ impl VisualServer {
                 size: wgpu::Extent3d {
                     width: 1024,
                     height: 1024,
-                    ..Default::default()
+                    depth_or_array_layers: self.settings.shadow_cascades.len() as _,
                 },
                 mip_level_count: 1,
                 sample_count: 1,
@@ -306,39 +322,41 @@ impl VisualServer {
                 view_formats: &[],
             });
 
-        let ortho_size = 16.0;
-        let shadow_map_projection = Mat4::orthographic_lh(
-            -ortho_size,
-            ortho_size,
-            -ortho_size,
-            ortho_size,
-            0.05,
-            100.0,
-        );
-        let shadow_map_view = Mat4::from(transform.inverse());
-        let shadow_map_scene_uniform = SceneUniform {
-            projection: shadow_map_projection.to_cols_array(),
-            view: shadow_map_view.to_cols_array(),
-            camera_transform: Mat4::from(transform).to_cols_array(),
-            ambient_light: [0.0, 0.0, 0.0, 0.0],
-        };
-        let shadow_map_scene_uniform_buffer =
-            self.backend.create_uniform_buffer(shadow_map_scene_uniform);
-        let shadow_map_scene_bind_group =
-            self.backend
+        let light_dir = transform.z_axis.into();
+        // FIXME cascades are recomputed twice, when updating the light and the camera. Make it one.
+        let cascade_projviews = self.compute_shadow_cascade_projviews(light_dir);
+        let mut shadow_cascades = Vec::new();
+        for projview in cascade_projviews {
+            let projview = projview.to_cols_array();
+
+            let uniform_buffer = self
+                .backend
+                .create_uniform_buffer(ShadowCascadeUniform { projview });
+            let bind_group = self
+                .backend
                 .device
                 .create_bind_group(&wgpu::BindGroupDescriptor {
-                    label: Some("scene bind group"),
+                    label: Some("shadow cascade bind group"),
                     layout: &self.pipeline3d.data.bind_group_layouts.scene,
                     entries: &[wgpu::BindGroupEntry {
                         binding: 0,
-                        resource: shadow_map_scene_uniform_buffer.as_entire_binding(),
+                        resource: uniform_buffer.as_entire_binding(),
                     }],
                 });
+            shadow_cascades.push(RenderShadowCascade {
+                projview,
+                bind_group,
+                uniform_buffer,
+            })
+        }
 
         let uniform = LightUniform {
             transform: Mat4::from(transform).to_cols_array(),
-            world_to_light: Mat4::from(shadow_map_projection * shadow_map_view).to_cols_array(),
+            cascades_world_to_light: [
+                shadow_cascades[0].projview,
+                shadow_cascades[1].projview,
+                shadow_cascades[2].projview,
+            ],
             color: light.color.to_array(),
             radius: light.radius().unwrap_or_default(),
             kind,
@@ -349,7 +367,7 @@ impl VisualServer {
         let bind_group = self.backend.create_light_bind_group(
             &uniform_buffer,
             &shadow_map,
-            &self.samplers.unfiltered,
+            &self.samplers.shadow_map,
             &self.pipeline3d.data.bind_group_layouts.light,
         );
 
@@ -358,9 +376,8 @@ impl VisualServer {
             RenderLight {
                 bind_group,
                 uniform_buffer,
-                shadow_map_scene_bind_group,
-                shadow_map_scene_uniform_buffer,
                 shadow_map,
+                shadow_cascades,
             },
         );
     }
@@ -503,7 +520,7 @@ impl VisualServer {
 
     fn recreate_render_target(&mut self) {
         let scaled_render_size =
-            (self.render_size().as_vec2() * self.render_size_factor).as_uvec2();
+            (self.render_size().as_vec2() * self.settings.render_size_factor).as_uvec2();
 
         let info = self.render_target.info();
         self.render_target = create_render_target(
@@ -633,6 +650,90 @@ impl VisualServer {
         self.render_scene.textures.insert(handle, texture);
     }
 
+    fn compute_shadow_cascade_projviews(&self, light_dir: Vec3) -> Vec<Mat4> {
+        // 1. Compute frustum corners in world space.
+        // For frustums of all cascades:
+        //   2. Compute cascade's specific frustum using ratios in self.settings.
+        //   3. Compute cascade's view transformation matrix.
+        //   4. Convert frustum in cascade view space.
+        //   5. Compute Aabb of frustum in cascade view space.
+        //   6. Adjust min and max Z coordinates of Aabb to include more stuff to cast shadows.
+        //   7. Compute orthographic projection matrix from above Aabb.
+        //   8. Compute cascade's view projection matrix.
+
+        let mut cascade_projviews = Vec::new();
+
+        // 1.
+        let frustum_point = |p: Vec3| {
+            let mut fp = self.render_scene.inv_projection_view * Vec4::new(p.x, p.y, p.z, 1.0);
+            fp /= fp.w;
+            fp
+        };
+
+        // Corners and edges of the camera view frustum in world space
+        // f: frustum, n/f: near/far, t/b: top/bottom, l/r: left/right
+        let fntl = frustum_point(Vec3::new(-1.0, 1.0, -1.0));
+        let fntr = frustum_point(Vec3::new(1.0, 1.0, -1.0));
+        let fnbl = frustum_point(Vec3::new(-1.0, -1.0, -1.0));
+        let fnbr = frustum_point(Vec3::new(1.0, -1.0, -1.0));
+        let fftl = frustum_point(Vec3::new(-1.0, 1.0, 1.0));
+        let fftr = frustum_point(Vec3::new(1.0, 1.0, 1.0));
+        let ffbl = frustum_point(Vec3::new(-1.0, -1.0, 1.0));
+        let ffbr = frustum_point(Vec3::new(1.0, -1.0, 1.0));
+
+        let ftl_edge = fftl - fntl;
+        let ftr_edge = fftr - fntr;
+        let fbl_edge = ffbl - fnbl;
+        let fbr_edge = ffbr - fnbr;
+
+        for &(near_ratio, far_ratio) in &self.settings.shadow_cascades {
+            // 2.
+            let cfntl = fntl + ftl_edge * near_ratio;
+            let cfntr = fntr + ftr_edge * near_ratio;
+            let cfnbl = fnbl + fbl_edge * near_ratio;
+            let cfnbr = fnbr + fbr_edge * near_ratio;
+            let cfftl = fntl + ftl_edge * far_ratio;
+            let cfftr = fntr + ftr_edge * far_ratio;
+            let cffbl = fnbl + fbl_edge * far_ratio;
+            let cffbr = fnbr + fbr_edge * far_ratio;
+
+            let cascade_frustum_corners = &[cfntl, cfntr, cfnbl, cfnbr, cfftl, cfftr, cffbl, cffbr];
+
+            let view_center = cascade_frustum_corners
+                .iter()
+                .copied()
+                .reduce(|a, b| a + b)
+                .unwrap_or(Vec4::ZERO)
+                / cascade_frustum_corners.len() as f32;
+            let cascade_view = Mat4::look_to_lh(view_center.xyz(), light_dir, Vec3::Y);
+
+            // 3. & 4. & 5.
+            let (mut min_x, mut min_y, mut min_z) = (f32::MAX, f32::MAX, f32::MAX);
+            let (mut max_x, mut max_y, mut max_z) = (f32::MIN, f32::MIN, f32::MIN);
+            for &corner in cascade_frustum_corners {
+                let p = cascade_view * corner;
+                min_x = f32::min(min_x, p.x);
+                max_x = f32::max(max_x, p.x);
+                min_y = f32::min(min_y, p.y);
+                max_y = f32::max(max_y, p.y);
+                min_z = f32::min(min_z, p.z);
+                max_z = f32::max(max_z, p.z);
+            }
+
+            // 6.
+            // TODO this
+
+            // 7.
+            let cascade_projection =
+                Mat4::orthographic_lh(min_x, max_x, min_y, max_y, min_z, max_z);
+
+            // 8.
+            cascade_projviews.push(cascade_projection * cascade_view);
+        }
+
+        cascade_projviews
+    }
+
     fn initialize_default_resources(&mut self, asset_server: &mut AssetServer) {
         let material = asset_server.add(Material::default());
         self.register_material(material, asset_server);
@@ -666,6 +767,7 @@ struct SceneUniform {
 
 #[derive(Default)]
 struct RenderScene {
+    inv_projection_view: Mat4,
     meshes: HashMap<Handle<Mesh>, RenderMesh>,
     materials: HashMap<Handle<Material>, RenderMaterial>,
     textures: HashMap<Handle<Image>, wgpu::Texture>,
@@ -687,14 +789,29 @@ struct RenderText {
 }
 
 struct RenderLight {
-    bind_group: wgpu::BindGroup, // FIXME The bind group can be shared among all lights
+    bind_group: wgpu::BindGroup,
     #[allow(unused)]
     uniform_buffer: wgpu::Buffer,
-    #[allow(unused)]
-    shadow_map_scene_bind_group: wgpu::BindGroup, // FIXME shadow map scene bind group can be shared among all lights?
-    #[allow(unused)]
-    shadow_map_scene_uniform_buffer: wgpu::Buffer,
+    // TODO remove these comments
+    // #[allow(unused)]
+    // shadow_map_scene_bind_group: wgpu::BindGroup,
+    // #[allow(unused)]
+    // shadow_map_scene_uniform_buffer: wgpu::Buffer,
     shadow_map: wgpu::Texture,
+    shadow_cascades: Vec<RenderShadowCascade>,
+}
+
+struct RenderShadowCascade {
+    projview: [f32; 16],
+    bind_group: wgpu::BindGroup,
+    #[allow(unused)]
+    uniform_buffer: wgpu::Buffer,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct ShadowCascadeUniform {
+    projview: [f32; 16],
 }
 
 struct RenderMesh {
@@ -743,7 +860,7 @@ struct MaterialUniform {
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct LightUniform {
     transform: [f32; 16],
-    world_to_light: [f32; 16],
+    cascades_world_to_light: [[f32; 16]; 3],
     color: [f32; 4],
     radius: f32,
     kind: u32, // Directional=0, Point=1
@@ -920,7 +1037,14 @@ fn create_render_target(
     }
 }
 
+struct Settings {
+    render_size_factor: f32,
+    shadow_cascades: Vec<(f32, f32)>,
+}
+
 struct Samplers {
+    #[allow(unused)]
     unfiltered: wgpu::Sampler,
     filtered: wgpu::Sampler,
+    shadow_map: wgpu::Sampler,
 }

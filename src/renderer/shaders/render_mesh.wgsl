@@ -113,7 +113,7 @@ fn compute_ambient_light(base_color: vec3f, light_color: vec3f, light_intensity:
 
 struct LightUniform {
     transform: mat4x4f,
-    world_to_light: mat4x4f,
+    cascades_world_to_light: array<mat4x4f, 3>, // NOTE hardcoded max cascade limit to 3
     color: vec4f,
     radius: f32,
     kind: u32, // Directional=0, Point=1
@@ -125,7 +125,7 @@ const LIGHT_KIND_DIRECTIONAL = 0u;
 const LIGHT_KIND_POINT = 1u;
 
 @group(3) @binding(1)
-var shadow_map: texture_2d<f32>;
+var shadow_maps: texture_2d_array<f32>;
 @group(3) @binding(2)
 var shadow_map_sampler: sampler;
 
@@ -190,14 +190,16 @@ fn compute_light_occlusion(frag_pos: vec3f, normal: vec3f, light_dir: vec3f) -> 
     let bias_offset = (depth_offset + normal_offset);
 
     let biased_frag_pos = frag_pos + bias_offset;
-    let light_space_frag_pos = light.world_to_light * vec4f(biased_frag_pos, 1.0); // TODO this can be calculated in the vertex shader
+    let cascade_layer = 0; // TODO ME this this me me
+    let light_space_frag_pos =
+        light.cascades_world_to_light[cascade_layer] * vec4f(biased_frag_pos, 1.0); // TODO this can be calculated in the vertex shader
     
     let ndc_coords = light_space_frag_pos.xyz / light_space_frag_pos.w;
 
     var shadow_map_coords = (ndc_coords.xy + 1.0) * 0.5;
     shadow_map_coords = vec2f(shadow_map_coords.x, 1.0 - shadow_map_coords.y);
 
-    let shadow_map_size = vec2f(textureDimensions(shadow_map));
+    let shadow_map_size = vec2f(textureDimensions(shadow_maps));
     let texel_size = vec2f(1.0) / shadow_map_size;
  
     var occlusion = 0.0;
@@ -207,7 +209,13 @@ fn compute_light_occlusion(frag_pos: vec3f, normal: vec3f, light_dir: vec3f) -> 
             sample_count += 1.0;
 
             let sample_offset = vec2f(vec2(x, y)) * texel_size;
-            let occluder_depth = textureSample(shadow_map, shadow_map_sampler, shadow_map_coords.xy + sample_offset).r;
+            // https://www.w3.org/TR/WGSL/#texturesample
+            let occluder_depth = textureSample(
+                shadow_maps,
+                shadow_map_sampler,
+                shadow_map_coords.xy + sample_offset,
+                cascade_layer,
+            ).r;
             let current_depth = ndc_coords.z;
 
             if current_depth > occluder_depth {

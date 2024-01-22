@@ -9,14 +9,11 @@ struct VertexOutput {
 };
 
 
-struct SceneUniform {
-    projection: mat4x4f,
-    view: mat4x4f,
-    camera_transform: mat4x4f,
-    ambient_light: vec4f,
+struct CascadeUniform {
+    projection_view: mat4x4f,
 };
 @group(0) @binding(0)
-var<uniform> scene: SceneUniform;
+var<uniform> cascade: CascadeUniform;
 
 struct ModelUniform {
     transform: mat4x4f,
@@ -29,9 +26,8 @@ var<uniform> model: ModelUniform;
 fn vs_main(vertex: VertexInput) -> VertexOutput {
     var out: VertexOutput;
 
-    let projection_view = scene.projection * scene.view;
     let vertex_pos_in_world_space = model.transform * vec4f(vertex.pos, 1.0);
-    out.clip_position = projection_view * vertex_pos_in_world_space;
+    out.clip_position = cascade.projection_view * vertex_pos_in_world_space;
 
     return out;
 }

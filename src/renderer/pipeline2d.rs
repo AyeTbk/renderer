@@ -329,6 +329,37 @@ impl Pipeline2d {
                 ],
             })
     }
+
+    pub fn build_fullscreen_texture_array_bind_group(
+        &self,
+        texture: &wgpu::Texture,
+        sampler: &wgpu::Sampler,
+        backend: &mut Backend,
+        layer: u32,
+    ) -> wgpu::BindGroup {
+        let texture_view = texture.create_view(&wgpu::TextureViewDescriptor {
+            dimension: Some(wgpu::TextureViewDimension::D2),
+            base_array_layer: layer,
+            array_layer_count: Some(1),
+            ..Default::default()
+        });
+        backend
+            .device
+            .create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("fullscreen texture array bind group"),
+                layout: &self.data.bind_group_layouts.fullscreen_texture,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: wgpu::BindingResource::TextureView(&texture_view),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: wgpu::BindingResource::Sampler(&sampler),
+                    },
+                ],
+            })
+    }
 }
 
 pub struct PipelineLayouts {

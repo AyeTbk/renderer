@@ -65,7 +65,13 @@ impl Backend {
         // A device represents a logical graphics/compute device.
         // A queue is a handle to a command queue for a device, to which commands can be submitted.
         let (device, queue) = adapter
-            .request_device(&wgpu::DeviceDescriptor::default(), None)
+            .request_device(
+                &wgpu::DeviceDescriptor {
+                    required_features: wgpu::Features::ADDRESS_MODE_CLAMP_TO_BORDER,
+                    ..Default::default()
+                },
+                None,
+            )
             .block_on()
             .unwrap();
 
@@ -455,14 +461,27 @@ impl Backend {
 
     pub fn create_sampler_non_filtering(&mut self) -> wgpu::Sampler {
         self.device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("show texture sampler"),
+            label: Some("non filtering sampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
             mag_filter: wgpu::FilterMode::Nearest,
             min_filter: wgpu::FilterMode::Nearest,
             mipmap_filter: wgpu::FilterMode::Nearest,
-            anisotropy_clamp: 1,
+            ..Default::default()
+        })
+    }
+
+    pub fn create_sampler_shadow_map(&mut self) -> wgpu::Sampler {
+        self.device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("shadow map sampler"),
+            address_mode_u: wgpu::AddressMode::ClampToBorder,
+            address_mode_v: wgpu::AddressMode::ClampToBorder,
+            address_mode_w: wgpu::AddressMode::ClampToBorder,
+            border_color: Some(wgpu::SamplerBorderColor::OpaqueWhite),
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
+            mipmap_filter: wgpu::FilterMode::Nearest,
             ..Default::default()
         })
     }

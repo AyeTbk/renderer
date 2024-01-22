@@ -146,7 +146,7 @@ impl Pipeline3d {
                             visibility: wgpu::ShaderStages::FRAGMENT,
                             ty: wgpu::BindingType::Texture {
                                 sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                                view_dimension: wgpu::TextureViewDimension::D2,
+                                view_dimension: wgpu::TextureViewDimension::D2Array,
                                 multisampled: false,
                             },
                             count: None,
@@ -266,38 +266,45 @@ impl Pipeline3d {
     ) {
         // Shadow maps
         for light in render_commands.lights {
-            let depth_view = light.shadow_map.create_view(&Default::default());
-            let depth_stencil_attachment = wgpu::RenderPassDepthStencilAttachment {
-                view: &depth_view,
-                depth_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(1.0),
-                    store: wgpu::StoreOp::Store,
-                }),
-                stencil_ops: None,
-            };
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("shadow map render pass"),
-                color_attachments: &[],
-                depth_stencil_attachment: Some(depth_stencil_attachment),
-                ..Default::default()
-            });
+            for i in 0..light.cascades_bind_groups.len() {
+                let depth_view = light.shadow_maps.create_view(&wgpu::TextureViewDescriptor {
+                    dimension: Some(wgpu::TextureViewDimension::D2),
+                    base_array_layer: i as _,
+                    array_layer_count: Some(1),
+                    ..Default::default()
+                });
+                let depth_stencil_attachment = wgpu::RenderPassDepthStencilAttachment {
+                    view: &depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                };
+                let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("shadow map render pass"),
+                    color_attachments: &[],
+                    depth_stencil_attachment: Some(depth_stencil_attachment),
+                    ..Default::default()
+                });
 
-            render_pass.set_pipeline(&self.pipelines.directional_shadow_map);
-            render_pass.set_bind_group(0, &light.shadow_map_scene_bind_group, &[]);
+                render_pass.set_pipeline(&self.pipelines.directional_shadow_map);
+                render_pass.set_bind_group(0, &light.cascades_bind_groups[i], &[]);
 
-            for mesh in render_commands.meshes {
-                let RenderCommandMesh {
-                    model_bind_group,
-                    vertex_buffer,
-                    index_buffer,
-                    index_count,
-                    ..
-                } = mesh;
+                for mesh in render_commands.meshes {
+                    let RenderCommandMesh {
+                        model_bind_group,
+                        vertex_buffer,
+                        index_buffer,
+                        index_count,
+                        ..
+                    } = mesh;
 
-                render_pass.set_bind_group(1, model_bind_group, &[]);
-                render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-                render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-                render_pass.draw_indexed(0..*index_count, 0, 0..1);
+                    render_pass.set_bind_group(1, model_bind_group, &[]);
+                    render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+                    render_pass.set_index_buffer(index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+                    render_pass.draw_indexed(0..*index_count, 0, 0..1);
+                }
             }
         }
 
@@ -410,8 +417,8 @@ pub struct RenderCommandMesh<'a> {
 
 pub struct RenderCommandLight<'a> {
     pub bind_group: &'a wgpu::BindGroup,
-    pub shadow_map_scene_bind_group: &'a wgpu::BindGroup,
-    pub shadow_map: &'a wgpu::Texture,
+    pub shadow_maps: &'a wgpu::Texture,
+    pub cascades_bind_groups: Vec<&'a wgpu::BindGroup>,
 }
 
 fn build_pipeline_ambient_light_depth_prepass(
