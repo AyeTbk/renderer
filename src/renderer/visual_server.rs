@@ -4,14 +4,14 @@ use std::{
 };
 
 use glam::{Affine3A, Mat4, UVec2, Vec2, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles};
+use log::warn;
 
 // TODO Find ways to reduce coupling between the renderer and the rest of the engine, to
 // eventually make it easy to extract in a separate crate (mostly in hopes of getting
 // better compile times). This goes for AssetServer too, I guess.
 use crate::{
-    arena::Handle, asset_server::AssetChanges, image::Image, light::LightKind,
-    material::BillboardMode, scene::UniqueNodeId, AssetServer, Camera, Color, Light, Material,
-    Mesh,
+    arena::Handle, asset_server::AssetChanges, image::Image, material::BillboardMode,
+    scene::UniqueNodeId, AssetServer, Camera, Color, Light, Material, Mesh,
 };
 
 use super::{
@@ -297,11 +297,14 @@ impl VisualServer {
     }
 
     pub fn set_light(&mut self, id: UniqueNodeId, transform: Affine3A, light: &Light) {
-        let kind = match &light.kind {
-            LightKind::Directional { .. } => 0,
-            LightKind::Point { .. } => 1,
-        };
+        if self.render_scene.lights.contains_key(&id) {
+            self.update_light(id, transform, light);
+        } else {
+            self.create_light(id, transform, light);
+        }
+    }
 
+    fn create_light(&mut self, id: UniqueNodeId, transform: Affine3A, light: &Light) {
         // TODO look into variance shadow maps (VSMs)
         let shadow_map = self
             .backend
@@ -322,8 +325,8 @@ impl VisualServer {
                 view_formats: &[],
             });
 
-        let light_dir = transform.z_axis.into();
         // FIXME cascades are recomputed twice, when updating the light and the camera. Make it one.
+        let light_dir = transform.z_axis.into();
         let cascade_projviews = self.compute_shadow_cascade_projviews(light_dir);
         let mut shadow_cascades = Vec::new();
         for projview in cascade_projviews {
@@ -350,7 +353,7 @@ impl VisualServer {
             })
         }
 
-        let uniform = LightUniform {
+        let uniform_buffer = self.backend.create_uniform_buffer(LightUniform {
             transform: Mat4::from(transform).to_cols_array(),
             cascades_world_to_light: [
                 shadow_cascades[0].projview,
@@ -359,10 +362,9 @@ impl VisualServer {
             ],
             color: light.color.to_array(),
             radius: light.radius().unwrap_or_default(),
-            kind,
+            kind: light.kind.id(),
             _padding: Default::default(),
-        };
-        let uniform_buffer = self.backend.create_uniform_buffer(uniform);
+        });
 
         let bind_group = self.backend.create_light_bind_group(
             &uniform_buffer,
@@ -378,6 +380,44 @@ impl VisualServer {
                 uniform_buffer,
                 shadow_map,
                 shadow_cascades,
+            },
+        );
+    }
+
+    pub fn update_light(&mut self, id: UniqueNodeId, transform: Affine3A, light: &Light) {
+        let Some(render_light) = self.render_scene.lights.get(&id) else {
+            warn!("light {:?} doesn't exist", id);
+            return;
+        };
+
+        // FIXME cascades are recomputed twice, when updating the light and the camera. Make it one.
+        let light_dir = transform.z_axis.into();
+        let cascade_projviews = self.compute_shadow_cascade_projviews(light_dir);
+        for (shadow_cascade, projview) in render_light
+            .shadow_cascades
+            .iter()
+            .zip(cascade_projviews.iter())
+        {
+            let projview = projview.to_cols_array();
+            self.backend.update_uniform_buffer(
+                &shadow_cascade.uniform_buffer,
+                ShadowCascadeUniform { projview },
+            );
+        }
+
+        self.backend.update_uniform_buffer(
+            &render_light.uniform_buffer,
+            LightUniform {
+                transform: Mat4::from(transform).to_cols_array(),
+                cascades_world_to_light: [
+                    cascade_projviews[0].to_cols_array(),
+                    cascade_projviews[1].to_cols_array(),
+                    cascade_projviews[2].to_cols_array(),
+                ],
+                color: light.color.to_array(),
+                radius: light.radius().unwrap_or_default(),
+                kind: light.kind.id(),
+                _padding: Default::default(),
             },
         );
     }
@@ -672,10 +712,10 @@ impl VisualServer {
 
         // Corners and edges of the camera view frustum in world space
         // f: frustum, n/f: near/far, t/b: top/bottom, l/r: left/right
-        let fntl = frustum_point(Vec3::new(-1.0, 1.0, -1.0));
-        let fntr = frustum_point(Vec3::new(1.0, 1.0, -1.0));
-        let fnbl = frustum_point(Vec3::new(-1.0, -1.0, -1.0));
-        let fnbr = frustum_point(Vec3::new(1.0, -1.0, -1.0));
+        let fntl = frustum_point(Vec3::new(-1.0, 1.0, 0.0));
+        let fntr = frustum_point(Vec3::new(1.0, 1.0, 0.0));
+        let fnbl = frustum_point(Vec3::new(-1.0, -1.0, 0.0));
+        let fnbr = frustum_point(Vec3::new(1.0, -1.0, 0.0));
         let fftl = frustum_point(Vec3::new(-1.0, 1.0, 1.0));
         let fftr = frustum_point(Vec3::new(1.0, 1.0, 1.0));
         let ffbl = frustum_point(Vec3::new(-1.0, -1.0, 1.0));

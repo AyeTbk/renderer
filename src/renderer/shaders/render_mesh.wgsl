@@ -180,6 +180,10 @@ fn fs_main_blinn_phong(in: VertexOutput) -> @location(0) vec4f {
 
 // https://learnopengl.com/Advanced-Lighting/Shadows/Shadow-Mapping
 fn compute_light_occlusion(frag_pos: vec3f, normal: vec3f, light_dir: vec3f) -> f32 {
+    if dot(normal, light_dir) > 0.0 {
+        return 0.0;
+    }
+    
     // These bias values are pretty arbitrary... TODO learn how to properly fix shadow acne.
     let depth_bias = 0.1;
     let depth_offset = -light_dir * depth_bias;
@@ -189,7 +193,7 @@ fn compute_light_occlusion(frag_pos: vec3f, normal: vec3f, light_dir: vec3f) -> 
 
     let bias_offset = (depth_offset + normal_offset);
 
-    let biased_frag_pos = frag_pos + bias_offset;
+    let biased_frag_pos = frag_pos + bias_offset * 0.05; // FIXME bias should be cascade dependent.
     let cascade_layer = 0; // TODO ME this this me me
     let light_space_frag_pos =
         light.cascades_world_to_light[cascade_layer] * vec4f(biased_frag_pos, 1.0); // TODO this can be calculated in the vertex shader
@@ -198,6 +202,7 @@ fn compute_light_occlusion(frag_pos: vec3f, normal: vec3f, light_dir: vec3f) -> 
 
     var shadow_map_coords = (ndc_coords.xy + 1.0) * 0.5;
     shadow_map_coords = vec2f(shadow_map_coords.x, 1.0 - shadow_map_coords.y);
+    let frag_depth = clamp(ndc_coords.z, 0.0, 1.0);
 
     let shadow_map_size = vec2f(textureDimensions(shadow_maps));
     let texel_size = vec2f(1.0) / shadow_map_size;
@@ -216,9 +221,8 @@ fn compute_light_occlusion(frag_pos: vec3f, normal: vec3f, light_dir: vec3f) -> 
                 shadow_map_coords.xy + sample_offset,
                 cascade_layer,
             ).r;
-            let current_depth = ndc_coords.z;
 
-            if current_depth > occluder_depth {
+            if frag_depth > occluder_depth {
                 occlusion += 1.0;
             }
         }

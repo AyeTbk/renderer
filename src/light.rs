@@ -6,12 +6,6 @@ pub struct Light {
     pub kind: LightKind,
 }
 
-#[derive(Clone)]
-pub enum LightKind {
-    Directional,
-    Point { radius: f32 },
-}
-
 impl Light {
     pub fn directional() -> Self {
         Self {
@@ -45,6 +39,21 @@ impl Default for Light {
         Self {
             color: Color::WHITE,
             kind: LightKind::Point { radius: 1.0 },
+        }
+    }
+}
+
+#[derive(Clone)]
+pub enum LightKind {
+    Directional,
+    Point { radius: f32 },
+}
+
+impl LightKind {
+    pub fn id(&self) -> u32 {
+        match &self {
+            LightKind::Directional { .. } => 0,
+            LightKind::Point { .. } => 1,
         }
     }
 }

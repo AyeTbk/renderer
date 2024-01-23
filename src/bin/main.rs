@@ -118,19 +118,23 @@ fn main() {
     );
     let dirlight = eng.scene.make_unique_node_id(dirlight);
 
-    // let dirlight2 = eng.scene.add_allocate_child(
-    //     eng.scene.root,
-    //     Node::new_light(Light::directional().with_color(Color::new(0.2, 0.3, 1.0, 0.5)))
-    //         .with_transform(
-    //             Affine3A::look_to_lh(
-    //                 Vec3::new(1.5, 25.0, 6.0),
-    //                 Vec3::new(-0.05, -0.5, -0.2),
-    //                 Vec3::Y,
-    //             )
-    //             .inverse(),
-    //         ),
-    // );
-    // eng.scene.make_unique_node_id(dirlight2);
+    let dirlight2 = eng.scene.add_allocate_child(
+        eng.scene.root,
+        Node::new_light(Light::directional().with_color(Color::new(0.2, 0.4, 1.0, 1.0)))
+            .with_transform(
+                Affine3A::look_at_lh(
+                    Vec3::new(15.0, 5.5, 16.0),
+                    Vec3::new(0.0, 0.0, 0.0),
+                    Vec3::Y,
+                )
+                .inverse(),
+            )
+            .with_update(|node, ctx| {
+                let angle = ctx.time.delta * 0.025;
+                node.transform = Affine3A::from_rotation_y(angle) * node.transform;
+            }),
+    );
+    eng.scene.make_unique_node_id(dirlight2);
 
     // = Point light =
     // eng.scene.add_allocate_child(
