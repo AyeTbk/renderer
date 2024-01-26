@@ -183,21 +183,38 @@ fn compute_light_occlusion(frag_pos: vec3f, normal: vec3f, light_dir: vec3f) -> 
     if dot(normal, light_dir) > 0.0 {
         return 0.0;
     }
-    
+
+    var cascade_layer = 0;
+    var cascade_bias_mod = 0.0;
+    let frag_view_depth = (scene.view * vec4f(frag_pos, 1.0)).z;
+    // FIXME hardcoded cascade depths is bad, use something like #define's
+    if frag_view_depth <= (0.05 * 100.0) {
+        cascade_layer = 0;
+        cascade_bias_mod = 0.03;
+    } else if frag_view_depth <= (0.1 * 100.0) {
+        cascade_layer = 1;
+        cascade_bias_mod = 0.05;
+    } else if frag_view_depth <= (0.3 * 100.0) {
+        cascade_layer = 2;
+        cascade_bias_mod = 0.1;
+    } else {
+        cascade_layer = 3;
+        cascade_bias_mod = 0.2;
+    }
+
     // These bias values are pretty arbitrary... TODO learn how to properly fix shadow acne.
-    let depth_bias = 0.1;
+    let depth_bias = 0.3;
     let depth_offset = -light_dir * depth_bias;
 
-    let normal_bias = 2.0;
-    let normal_offset = normal * normal_bias * 0.2;
+    let normal_bias = 0.8;
+    let normal_offset = normal * normal_bias;
 
     let bias_offset = (depth_offset + normal_offset);
+    let biased_frag_pos = frag_pos + bias_offset * cascade_bias_mod;
 
-    let biased_frag_pos = frag_pos + bias_offset * 0.05; // FIXME bias should be cascade dependent.
-    let cascade_layer = 0; // TODO ME this this me me
     let light_space_frag_pos =
         light.cascades_world_to_light[cascade_layer] * vec4f(biased_frag_pos, 1.0); // TODO this can be calculated in the vertex shader
-    
+
     let ndc_coords = light_space_frag_pos.xyz / light_space_frag_pos.w;
 
     var shadow_map_coords = (ndc_coords.xy + 1.0) * 0.5;

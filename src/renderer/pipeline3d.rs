@@ -297,8 +297,12 @@ impl Pipeline3d {
                         vertex_buffer,
                         index_buffer,
                         index_count,
+                        casts_shadows,
                         ..
                     } = mesh;
+                    if !casts_shadows {
+                        continue;
+                    }
 
                     render_pass.set_bind_group(1, model_bind_group, &[]);
                     render_pass.set_vertex_buffer(0, vertex_buffer.slice(..));
@@ -328,6 +332,7 @@ impl Pipeline3d {
                 vertex_buffer,
                 index_buffer,
                 index_count,
+                ..
             } = mesh;
 
             render_pass.set_bind_group(1, material_bind_group, &[]);
@@ -347,6 +352,7 @@ impl Pipeline3d {
                 vertex_buffer,
                 index_buffer,
                 index_count,
+                ..
             } = mesh;
 
             render_pass.set_bind_group(1, material_bind_group, &[]);
@@ -413,6 +419,7 @@ pub struct RenderCommandMesh<'a> {
     pub vertex_buffer: &'a wgpu::Buffer,
     pub index_buffer: &'a wgpu::Buffer,
     pub index_count: u32,
+    pub casts_shadows: bool,
 }
 
 pub struct RenderCommandLight<'a> {

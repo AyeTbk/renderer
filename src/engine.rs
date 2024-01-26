@@ -16,6 +16,7 @@ pub struct Engine {
     pub input: Input,
     pub display: Display,
     pub scene: Scene,
+    pub timescale: f32,
     gizmo_image: Handle<Image>,
 }
 
@@ -29,6 +30,7 @@ impl Engine {
             input: Default::default(),
             display: Default::default(),
             scene: Scene::new_empty(),
+            timescale: 1.0,
             gizmo_image,
         }
     }
@@ -54,7 +56,9 @@ impl Engine {
                 visual_server: &mut self.visual_server,
                 display: &self.display,
                 input: &self.input,
-                time: &Time { delta: 1.0 / 60.0 },
+                time: &Time {
+                    delta: (1.0 / 60.0) * self.timescale,
+                },
                 gizmo_image: self.gizmo_image,
             },
         );
@@ -83,6 +87,12 @@ impl Engine {
 
         // With how the mousemove event works, the delta has to be accumulated, and here I reset it.
         self.input.pointer_delta = Vec2::ZERO;
+
+        if self.input.is_pressed(KeyCode::ArrowLeft) {
+            self.timescale = f32::clamp(self.timescale - 0.05, 0.0, 1.0);
+        } else if self.input.is_pressed(KeyCode::ArrowRight) {
+            self.timescale = f32::clamp(self.timescale + 0.05, 0.0, 1.0);
+        }
     }
 
     fn update_node_recursive(

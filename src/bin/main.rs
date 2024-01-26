@@ -32,10 +32,10 @@ fn main() {
     // Load scene
     let scene = eng
         .asset_server
-        // .load_scene("data/scenes/sponza/Sponza.gltf")
+        .load_scene("data/scenes/sponza/Sponza.gltf")
         // .load_scene("data/scenes/flight/FlightHelmet.gltf")
         // .load_scene("data/scenes/suzanne/suzanne.gltf")
-        .load_scene("data/scenes/the-sphere.glb")
+        // .load_scene("data/scenes/the-sphere.glb")
         // .load_scene("data/scenes/tri.glb")
         // .load_scene("data/scenes/uvs.glb")
         // .load_scene("data/scenes/checker-world.glb")

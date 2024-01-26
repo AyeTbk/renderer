@@ -98,7 +98,8 @@ impl VisualServer {
             backend,
             settings: Settings {
                 render_size_factor: 1.0,
-                shadow_cascades: vec![(0.0, 0.05), (0.05, 0.2), (0.2, 1.0)],
+                // FIXME The shader doesn't know about these, they're hardcoded right now. fix it
+                shadow_cascades: vec![(0.0, 0.05), (0.05, 0.1), (0.1, 0.3), (0.3, 1.0)],
             },
             //
             viewport_uniform_buffer,
@@ -193,6 +194,7 @@ impl VisualServer {
                     vertex_buffer: &submesh.vertex_buffer,
                     index_buffer: &submesh.index_buffer,
                     index_count: submesh.index_count,
+                    casts_shadows: mesh_instance.casts_shadows,
                 });
             }
         }
@@ -312,8 +314,8 @@ impl VisualServer {
             .create_texture(&wgpu::TextureDescriptor {
                 label: Some("shadow map texture"),
                 size: wgpu::Extent3d {
-                    width: 1024,
-                    height: 1024,
+                    width: 2048,
+                    height: 2048,
                     depth_or_array_layers: self.settings.shadow_cascades.len() as _,
                 },
                 mip_level_count: 1,
@@ -444,6 +446,7 @@ impl VisualServer {
                 model_bind_group,
                 mesh: mesh_handle,
                 material_override: None,
+                casts_shadows: true,
             },
         );
     }
@@ -486,6 +489,7 @@ impl VisualServer {
                     model_bind_group,
                     mesh: self.quad_mesh.unwrap(),
                     material_override: Some(material),
+                    casts_shadows: false,
                 },
             );
         }
@@ -761,7 +765,17 @@ impl VisualServer {
             }
 
             // 6.
-            // TODO this
+            let z_mult = 10.0;
+            if min_z < 0.0 {
+                min_z *= z_mult;
+            } else {
+                min_z /= z_mult;
+            }
+            if max_z < 0.0 {
+                max_z /= z_mult;
+            } else {
+                max_z *= z_mult;
+            }
 
             // 7.
             let cascade_projection =
@@ -866,11 +880,12 @@ struct RenderSubmesh {
 }
 
 struct RenderMeshInstance {
-    model_bind_group: wgpu::BindGroup, // FIXME The bind group can be shared among all mesh instances
+    model_bind_group: wgpu::BindGroup,
     #[allow(unused)]
     model_uniform_buffer: wgpu::Buffer,
     mesh: Handle<Mesh>,
     material_override: Option<Handle<Material>>,
+    casts_shadows: bool,
 }
 
 #[repr(C)]
