@@ -1,10 +1,12 @@
 use glam::Vec2;
 use wgpu::CommandEncoder;
 
-pub mod glyph_instance;
 use crate::{arena::Handle, asset_server::AssetChanges, shader_source::ShaderSource, AssetServer};
 
-use self::glyph_instance::GlyphInstance;
+pub mod glyph_instance;
+use self::{glyph_instance::GlyphInstance, uibox_instance::UiBoxInstance};
+
+pub mod uibox_instance;
 
 use super::{
     backend::Backend,
@@ -13,6 +15,7 @@ use super::{
 
 pub struct Pipeline2d {
     render_text_pipeline: wgpu::RenderPipeline,
+    render_uibox_pipeline: wgpu::RenderPipeline,
     render_fullscreen_texture_pipeline: wgpu::RenderPipeline,
     data: Pipeline2dData,
 }
@@ -41,6 +44,13 @@ impl Pipeline2d {
             asset_server.load::<ShaderSource>("src/renderer/shaders/text.wgsl");
         let shader_source = asset_server.get(shader_source_handle).source().to_string();
 
+        let uibox_shader_source_handle =
+            asset_server.load::<ShaderSource>("src/renderer/shaders/uibox.wgsl");
+        let uibox_shader_source = asset_server
+            .get(uibox_shader_source_handle)
+            .source()
+            .to_string();
+
         let render_fullscreen_texture_handle =
             asset_server.load::<ShaderSource>("src/renderer/shaders/fullscreen_texture.wgsl");
         let render_fullscreen_texture = asset_server
@@ -51,6 +61,8 @@ impl Pipeline2d {
         let shaders = Shaders {
             render_text_source: shader_source_handle,
             render_text: backend.create_shader_module("render text shader", &shader_source),
+            render_uibox_source: uibox_shader_source_handle,
+            render_uibox: backend.create_shader_module("render uibox shader", &uibox_shader_source),
             render_fullscreen_texture_source: render_fullscreen_texture_handle,
             render_fullscreen_texture: backend.create_shader_module(
                 "render fullscreen texture shader",
@@ -133,6 +145,13 @@ impl Pipeline2d {
                     ],
                     push_constant_ranges: &[],
                 }),
+            uibox: backend
+                .device
+                .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                    label: Some("uibox pipeline layout"),
+                    bind_group_layouts: &[&bind_group_layouts.viewport],
+                    push_constant_ranges: &[],
+                }),
             fullscreen_texture: backend.device.create_pipeline_layout(
                 &wgpu::PipelineLayoutDescriptor {
                     label: Some("fullscreen texture pipeline layout"),
@@ -188,6 +207,7 @@ impl Pipeline2d {
 
         Self {
             render_text_pipeline: build_render_text_pipeline(&data, backend),
+            render_uibox_pipeline: build_uibox_pipeline(&data, backend),
             render_fullscreen_texture_pipeline: build_render_fullscreen_texture_pipeline(
                 &data, backend,
             ),
@@ -227,6 +247,13 @@ impl Pipeline2d {
 
             self.rebuild_pipelines(backend);
         }
+        if changes.contains(self.data.shaders.render_uibox_source) {
+            let source = asset_server.get(self.data.shaders.render_uibox_source);
+            self.data.shaders.render_uibox =
+                backend.create_shader_module("render uibox shader", source.source());
+
+            self.rebuild_pipelines(backend);
+        }
         if changes.contains(self.data.shaders.render_fullscreen_texture_source) {
             let source = asset_server.get(self.data.shaders.render_fullscreen_texture_source);
             self.data.shaders.render_fullscreen_texture =
@@ -259,12 +286,20 @@ impl Pipeline2d {
             ..Default::default()
         });
 
+        // Render fullscreen texture
         if let Some(render_command) = render_commands.texture {
             render_pass.set_pipeline(&self.render_fullscreen_texture_pipeline);
             render_pass.set_bind_group(0, render_command.fullscreen_texture_bind_group, &[]);
             render_pass.draw(0..4, 0..1);
         }
 
+        // Render uiboxes
+        render_pass.set_pipeline(&self.render_uibox_pipeline);
+        render_pass.set_bind_group(0, &self.data.viewport_bind_group, &[]);
+        render_pass.set_vertex_buffer(0, render_commands.uiboxes.instance_buffer.slice(..));
+        render_pass.draw(0..4, 0..render_commands.uiboxes.instance_count);
+
+        // Render text
         for render_command in render_commands.texts {
             render_pass.set_pipeline(&self.render_text_pipeline);
             render_pass.set_bind_group(0, &self.data.viewport_bind_group, &[]);
@@ -276,6 +311,7 @@ impl Pipeline2d {
 
     fn rebuild_pipelines(&mut self, backend: &mut Backend) {
         self.render_text_pipeline = build_render_text_pipeline(&self.data, backend);
+        self.render_uibox_pipeline = build_uibox_pipeline(&self.data, backend);
         self.render_fullscreen_texture_pipeline =
             build_render_fullscreen_texture_pipeline(&self.data, backend);
     }
@@ -364,6 +400,7 @@ impl Pipeline2d {
 
 pub struct PipelineLayouts {
     pub text: wgpu::PipelineLayout,
+    pub uibox: wgpu::PipelineLayout,
     pub fullscreen_texture: wgpu::PipelineLayout,
 }
 
@@ -376,16 +413,24 @@ pub struct BindGroupLayouts {
 pub struct Shaders {
     pub render_text_source: Handle<ShaderSource>,
     pub render_text: wgpu::ShaderModule,
+    pub render_uibox_source: Handle<ShaderSource>,
+    pub render_uibox: wgpu::ShaderModule,
     pub render_fullscreen_texture_source: Handle<ShaderSource>,
     pub render_fullscreen_texture: wgpu::ShaderModule,
 }
 
 pub struct RenderCommands<'a> {
-    pub texts: &'a [RenderTextCommand<'a>],
+    pub texts: &'a [RenderCommandText<'a>],
+    pub uiboxes: RenderCommandUiBoxes<'a>,
     pub texture: Option<&'a RenderFullscreenTextureCommand<'a>>,
 }
 
-pub struct RenderTextCommand<'a> {
+pub struct RenderCommandText<'a> {
+    pub instance_buffer: &'a wgpu::Buffer,
+    pub instance_count: u32,
+}
+
+pub struct RenderCommandUiBoxes<'a> {
     pub instance_buffer: &'a wgpu::Buffer,
     pub instance_count: u32,
 }
@@ -410,6 +455,46 @@ fn build_render_text_pipeline(
             },
             fragment: Some(wgpu::FragmentState {
                 module: &pipeline_data.shaders.render_text,
+                entry_point: "fs_main",
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: pipeline_data.render_target_info.color_format,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleStrip,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back),
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState {
+                count: pipeline_data.render_target_info.sample_count,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview: None,
+        })
+}
+
+fn build_uibox_pipeline(
+    pipeline_data: &Pipeline2dData,
+    backend: &mut Backend,
+) -> wgpu::RenderPipeline {
+    backend
+        .device
+        .create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("build render uibox pipeline"),
+            layout: Some(&pipeline_data.pipeline_layouts.uibox),
+            vertex: wgpu::VertexState {
+                module: &pipeline_data.shaders.render_uibox,
+                entry_point: "vs_main",
+                buffers: &[UiBoxInstance::buffer_layout()],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &pipeline_data.shaders.render_uibox,
                 entry_point: "fs_main",
                 targets: &[Some(wgpu::ColorTargetState {
                     format: pipeline_data.render_target_info.color_format,

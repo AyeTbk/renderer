@@ -17,8 +17,8 @@ use crate::{
 use super::{
     backend::Backend,
     pipeline2d::{
-        self, glyph_instance::GlyphInstance, Pipeline2d, RenderFullscreenTextureCommand,
-        RenderTextCommand,
+        self, glyph_instance::GlyphInstance, uibox_instance::UiBoxInstance, Pipeline2d,
+        RenderCommandText, RenderCommandUiBoxes, RenderFullscreenTextureCommand,
     },
     pipeline3d::{Pipeline3d, RenderCommandLight, RenderCommandMesh, RenderCommands},
 };
@@ -36,6 +36,9 @@ pub struct VisualServer {
     default_material: Option<Handle<Material>>,
     quad_mesh: Option<Handle<Mesh>>,
     samplers: Samplers,
+    //
+    uibox_instance_buffer: wgpu::Buffer,
+    uibox_instance_count: u32,
     //
     render_target: RenderTarget,
     pipeline3d: Pipeline3d,
@@ -70,6 +73,20 @@ impl VisualServer {
             filtered: backend.create_sampler(),
             shadow_map: backend.create_sampler_shadow_map(),
         };
+
+        let uibox_instances = &[
+            UiBoxInstance::new(
+                Vec2::new(20.0, 20.0),
+                Vec2::new(200.0, 200.0),
+                Color::BLUE.with_a(0.25),
+            ),
+            UiBoxInstance::new(
+                Vec2::new(55.0, 55.0),
+                Vec2::new(200.0, 200.0),
+                Color::RED.with_a(0.25),
+            ),
+        ];
+        let uibox_instance_buffer = backend.create_vertex_buffer(uibox_instances);
 
         let render_target = create_render_target(
             backend.render_size(),
@@ -111,6 +128,9 @@ impl VisualServer {
             quad_mesh: None,
             default_material: None,
             samplers,
+            //
+            uibox_instance_buffer,
+            uibox_instance_count: uibox_instances.len() as u32,
             //
             render_target,
             pipeline3d,
@@ -229,7 +249,7 @@ impl VisualServer {
 
         let mut render_text_commands = Vec::new();
         for text in self.render_scene.texts.values() {
-            render_text_commands.push(RenderTextCommand {
+            render_text_commands.push(RenderCommandText {
                 instance_buffer: &text.instance_buffer,
                 instance_count: text.instance_count,
             });
@@ -245,6 +265,10 @@ impl VisualServer {
             };
         let commands_2d = pipeline2d::RenderCommands {
             texts: &render_text_commands,
+            uiboxes: RenderCommandUiBoxes {
+                instance_buffer: &self.uibox_instance_buffer,
+                instance_count: self.uibox_instance_count,
+            },
             texture: maybe_texture_command.as_ref(),
         };
         self.pipeline2d
