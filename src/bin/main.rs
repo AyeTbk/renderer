@@ -2,10 +2,10 @@ use std::sync::Arc;
 
 use asset_image::Image;
 use glam::{Affine3A, Mat3A, Quat, UVec2, Vec2, Vec3, Vec3A};
-use renderer::{Color, Engine, Light, Node};
+use renderer::{arena::Handle, Color, Engine, Light, Node};
 use winit::{
     dpi::PhysicalSize,
-    event::{DeviceEvent, ElementState, Event, KeyEvent, WindowEvent},
+    event::{DeviceEvent, ElementState, Event, KeyEvent, MouseButton, WindowEvent},
     event_loop::EventLoop,
     keyboard::{Key, KeyCode, NamedKey, PhysicalKey},
     window::WindowBuilder,
@@ -42,17 +42,20 @@ fn main() {
         .unwrap();
     eng.scene = eng.asset_server.get(scene).clone();
 
-    // = Load extra subscene =
-    // let helmet = eng
-    //     .asset_server
-    //     .load_scene("data/scenes/flight/FlightHelmet.gltf")
-    //     .unwrap();
-    // let helmet_scene = eng.asset_server.get(helmet).clone();
-    // eng.scene.add_allocate_child(
-    //     eng.scene.root,
-    //     Node::new_scene(helmet_scene)
-    //         .with_transform(Affine3A::from_rotation_y(-std::f32::consts::FRAC_PI_2)),
-    // );
+    // Make ui
+    make_ui(&mut eng.scene);
+
+    //= Load extra subscene =
+    let helmet = eng
+        .asset_server
+        .load_scene("data/scenes/flight/FlightHelmet.gltf")
+        .unwrap();
+    let helmet_scene = eng.asset_server.get(helmet).clone();
+    eng.scene.add_allocate_child(
+        eng.scene.root,
+        Node::new_scene(helmet_scene)
+            .with_transform(Affine3A::from_rotation_y(-std::f32::consts::FRAC_PI_2)),
+    );
 
     eng.scene.add_allocate_child(
         eng.scene.root,
@@ -226,7 +229,11 @@ fn main() {
                         let pointer_pos = Vec2::new(position.x as f32, position.y as f32);
                         eng.input.pointer_pos = pointer_pos;
                     }
-                    WindowEvent::MouseInput { state, .. } => {
+                    WindowEvent::MouseInput {
+                        button: MouseButton::Right,
+                        state,
+                        ..
+                    } => {
                         if *state == ElementState::Pressed {
                             if cursor_grabbed {
                                 cursor_grabbed = false;
@@ -279,4 +286,60 @@ fn main() {
 
 fn physical_size_to_uvec2(size: PhysicalSize<u32>) -> UVec2 {
     UVec2::new(size.width, size.height)
+}
+
+fn make_ui(scene: &mut renderer::Scene) -> Handle<Node> {
+    use renderer::ui::*;
+
+    let ui_root = scene.add_allocate_child(
+        scene.root,
+        Node::new_uibox(UiBox {
+            layout: Layout {
+                width: 250.0,
+                v_extend: true,
+                padding: 20.0,
+                ..Default::default()
+            },
+            style: Style {
+                color: Color::new(0.13, 0.13, 0.15, 0.5),
+                ..Default::default()
+            },
+            ..Default::default()
+        }),
+    );
+
+    scene.add_allocate_child(
+        ui_root,
+        Node::new_uibox(UiBox {
+            layout: Layout {
+                h_extend: true,
+                height: 150.0,
+                padding: 20.0,
+                ..Default::default()
+            },
+            style: Style {
+                color: Color::BLACK,
+                ..Default::default()
+            },
+            ..Default::default()
+        }),
+    );
+
+    scene.add_allocate_child(
+        ui_root,
+        Node::new_uibox(UiBox {
+            layout: Layout {
+                h_extend: true,
+                height: 50.0,
+                ..Default::default()
+            },
+            style: Style {
+                color: Color::GREY,
+                ..Default::default()
+            },
+            ..Default::default()
+        }),
+    );
+
+    ui_root
 }

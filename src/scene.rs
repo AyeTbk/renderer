@@ -5,6 +5,7 @@ use glam::Affine3A;
 use crate::{
     arena::{Arena, Handle},
     engine::Context,
+    ui::UiBox,
     Camera, Light, Mesh,
 };
 
@@ -31,6 +32,14 @@ impl Scene {
             root,
             children: Default::default(),
         }
+    }
+
+    pub fn get(&self, node: NodeId) -> &Node {
+        self.nodes.get(node)
+    }
+
+    pub fn get_mut(&mut self, node: NodeId) -> &mut Node {
+        self.nodes.get_mut(node)
     }
 
     pub fn add_allocate_child(&mut self, parent: NodeId, child: Node) -> NodeId {
@@ -83,6 +92,24 @@ impl Node {
         Self::with_data(NodeData::Text(text.into(), size))
     }
 
+    pub fn new_uibox(uibox: UiBox) -> Self {
+        Self::with_data(NodeData::UiBox(uibox))
+    }
+
+    pub fn as_uibox(&self) -> Option<&UiBox> {
+        match &self.data {
+            NodeData::UiBox(uibox) => Some(uibox),
+            _ => None,
+        }
+    }
+
+    pub fn as_uibox_mut(&mut self) -> Option<&mut UiBox> {
+        match &mut self.data {
+            NodeData::UiBox(uibox) => Some(uibox),
+            _ => None,
+        }
+    }
+
     pub fn with_data(data: NodeData) -> Self {
         Self {
             transform: Default::default(),
@@ -110,4 +137,5 @@ pub enum NodeData {
     Mesh(Handle<Mesh>),
     Scene(Box<Scene>),
     Text(Vec<u8>, f32),
+    UiBox(UiBox),
 }

@@ -30,6 +30,8 @@ pub use shader_source::ShaderSource;
 mod scene;
 pub use scene::{Node, NodeData, Scene};
 
+pub mod ui;
+
 mod camera;
 pub use camera::Camera;
 

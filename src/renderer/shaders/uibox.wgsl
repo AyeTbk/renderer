@@ -23,7 +23,9 @@ fn vs_main(
     instance: InstanceInput,
 ) -> VertexOutput {
     var out: VertexOutput;
-    out.color = instance.color;
+
+    let gamma = 2.2;
+    out.color = vec4f(pow(instance.color.rgb, vec3f(gamma)), instance.color.a);
 
     let viewport_size = vec2f(viewport.size);
 

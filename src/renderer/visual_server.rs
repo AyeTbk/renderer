@@ -74,19 +74,7 @@ impl VisualServer {
             shadow_map: backend.create_sampler_shadow_map(),
         };
 
-        let uibox_instances = &[
-            UiBoxInstance::new(
-                Vec2::new(20.0, 20.0),
-                Vec2::new(200.0, 200.0),
-                Color::BLUE.with_a(0.25),
-            ),
-            UiBoxInstance::new(
-                Vec2::new(55.0, 55.0),
-                Vec2::new(200.0, 200.0),
-                Color::RED.with_a(0.25),
-            ),
-        ];
-        let uibox_instance_buffer = backend.create_vertex_buffer(uibox_instances);
+        let uibox_instance_buffer = backend.create_vertex_buffer::<UiBoxInstance>(&[]);
 
         let render_target = create_render_target(
             backend.render_size(),
@@ -130,7 +118,7 @@ impl VisualServer {
             samplers,
             //
             uibox_instance_buffer,
-            uibox_instance_count: uibox_instances.len() as u32,
+            uibox_instance_count: 0,
             //
             render_target,
             pipeline3d,
@@ -148,19 +136,16 @@ impl VisualServer {
 
     pub fn set_render_size(&mut self, render_size: UVec2) {
         self.backend.set_render_size(render_size);
-
         self.recreate_render_target();
     }
 
     pub fn set_render_size_factor(&mut self, factor: f32) {
         self.settings.render_size_factor = factor;
-
         self.recreate_render_target();
     }
 
     pub fn set_msaa(&mut self, sample_count: u32) {
         self.render_target.sample_count = sample_count;
-
         self.recreate_render_target();
     }
 
@@ -446,6 +431,11 @@ impl VisualServer {
                 _padding: Default::default(),
             },
         );
+    }
+
+    pub fn set_uiboxes(&mut self, uiboxes: &[UiBoxInstance]) {
+        self.uibox_instance_buffer = self.backend.create_vertex_buffer(uiboxes);
+        self.uibox_instance_count = uiboxes.len() as u32;
     }
 
     pub fn set_mesh_instance(

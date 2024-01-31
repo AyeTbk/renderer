@@ -7,7 +7,7 @@ use winit::{keyboard::KeyCode, window::Window};
 use crate::{
     arena::Handle,
     scene::{NodeData, NodeId},
-    AssetServer, Input, Scene, VisualServer,
+    ui, AssetServer, Input, Scene, VisualServer,
 };
 
 pub struct Engine {
@@ -154,6 +154,13 @@ impl Engine {
                     text,
                     *size,
                 );
+            }
+            NodeData::UiBox(_) => {
+                ui::layout(node_id, scene, context);
+                ui::input(node_id, scene, context);
+                ui::paint(node_id, scene, context);
+                // Don't keep recursing
+                return;
             }
         }
 
