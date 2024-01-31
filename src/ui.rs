@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use glam::Vec2;
+use winit::event::MouseButton;
 
 use crate::{
     arena::Handle, engine::Context, renderer::pipeline2d::uibox_instance::UiBoxInstance, Color,
@@ -23,6 +24,11 @@ pub struct Rect {
 }
 
 impl Rect {
+    pub fn contains(&self, point: Vec2) -> bool {
+        (self.pos.x <= point.x && point.x <= self.pos.x + self.size.x)
+            && (self.pos.y <= point.y && point.y <= self.pos.y + self.size.y)
+    }
+
     pub fn shrunk(&self, amount: f32) -> Self {
         let half_amount = amount / 2.0;
         Self {
@@ -32,7 +38,7 @@ impl Rect {
     }
 }
 
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
 pub enum UiBoxState {
     #[default]
     Normal,
@@ -69,12 +75,16 @@ impl LayoutDirection {
 #[derive(Debug, Clone)]
 pub struct Style {
     pub color: Color,
+    pub hovered_color: Option<Color>,
+    pub pressed_color: Option<Color>,
 }
 
 impl Default for Style {
     fn default() -> Self {
         Self {
             color: Color::TRANSPARENT,
+            hovered_color: None,
+            pressed_color: None,
         }
     }
 }
@@ -211,7 +221,36 @@ pub fn layout(ui_root_id: Handle<Node>, scene: &mut Scene, context: &Context) {
 }
 
 pub fn input(ui_root_id: Handle<Node>, scene: &mut Scene, context: &mut Context) {
-    // TODO
+    fn gather_ui_nodes(node_id: Handle<Node>, scene: &Scene, ui_nodes: &mut Vec<Handle<Node>>) {
+        if scene.get(node_id).as_uibox().is_none() {
+            return;
+        }
+        for &child_id in scene.children_of(node_id) {
+            gather_ui_nodes(child_id, scene, ui_nodes);
+        }
+        ui_nodes.push(node_id);
+    }
+    let mut ui_nodes = Vec::new();
+    gather_ui_nodes(ui_root_id, scene, &mut ui_nodes);
+
+    for node_id in ui_nodes {
+        let uibox = scene.get_mut(node_id).as_uibox_mut().unwrap();
+
+        if uibox.rect.contains(context.input.pointer_pos) && !context.input.pointer_grabbed {
+            if context.input.is_button_pressed(MouseButton::Left) {
+                uibox.state = UiBoxState::Pressed;
+            } else {
+                if uibox.state == UiBoxState::Pressed {
+                    if let Some(handler) = uibox.on_click {
+                        handler(context);
+                    }
+                }
+                uibox.state = UiBoxState::Hovered;
+            }
+        } else {
+            uibox.state = UiBoxState::Normal;
+        }
+    }
 }
 
 pub fn paint(ui_root_id: Handle<Node>, scene: &Scene, context: &mut Context) {
@@ -220,10 +259,20 @@ pub fn paint(ui_root_id: Handle<Node>, scene: &Scene, context: &mut Context) {
             return;
         };
 
+        let color = match (
+            uibox.state,
+            uibox.style.hovered_color,
+            uibox.style.pressed_color,
+        ) {
+            (UiBoxState::Hovered, Some(hovered_color), _) => hovered_color,
+            (UiBoxState::Pressed, _, Some(pressed_color)) => pressed_color,
+            _ => uibox.style.color,
+        };
+
         instances.push(UiBoxInstance {
             position: uibox.rect.pos.to_array(),
             size: uibox.rect.size.to_array(),
-            color: uibox.style.color.to_array(),
+            color: color.to_array(),
         });
 
         for &child_id in scene.children_of(node_id) {

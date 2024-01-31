@@ -1,14 +1,16 @@
 use std::collections::HashMap;
 
 use glam::{Vec2, Vec3};
-use winit::keyboard::KeyCode;
+use winit::{event::MouseButton, keyboard::KeyCode};
 
 #[derive(Debug, Default)]
 pub struct Input {
     pub keymap: HashMap<KeyCode, bool>,
+    pub buttonmap: HashMap<MouseButton, bool>,
     pub mod_shift: bool,
     pub pointer_pos: Vec2,
     pub pointer_delta: Vec2,
+    pub pointer_grabbed: bool,
     //
     pub delta_view: Vec2,
     pub movement: Vec3,
@@ -18,6 +20,10 @@ pub struct Input {
 impl Input {
     pub fn is_pressed(&self, key: KeyCode) -> bool {
         self.keymap.get(&key).copied().unwrap_or_default()
+    }
+
+    pub fn is_button_pressed(&self, button: MouseButton) -> bool {
+        self.buttonmap.get(&button).copied().unwrap_or_default()
     }
 
     pub fn axis_strength(&self, positive: KeyCode, negtive: KeyCode) -> f32 {

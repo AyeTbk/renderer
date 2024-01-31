@@ -20,8 +20,6 @@ fn main() {
             .unwrap(),
     );
 
-    let mut cursor_grabbed = false;
-
     let mut eng = Engine::new(&window);
 
     // Load font
@@ -229,24 +227,26 @@ fn main() {
                         let pointer_pos = Vec2::new(position.x as f32, position.y as f32);
                         eng.input.pointer_pos = pointer_pos;
                     }
-                    WindowEvent::MouseInput {
-                        button: MouseButton::Right,
-                        state,
-                        ..
-                    } => {
-                        if *state == ElementState::Pressed {
-                            if cursor_grabbed {
-                                cursor_grabbed = false;
-                                window
-                                    .set_cursor_grab(winit::window::CursorGrabMode::None)
-                                    .unwrap();
-                                window.set_cursor_visible(true);
-                            } else {
-                                cursor_grabbed = true;
-                                window
-                                    .set_cursor_grab(winit::window::CursorGrabMode::Confined)
-                                    .unwrap();
-                                window.set_cursor_visible(false);
+                    WindowEvent::MouseInput { button, state, .. } => {
+                        eng.input
+                            .buttonmap
+                            .insert(*button, *state == ElementState::Pressed);
+
+                        if *button == MouseButton::Right {
+                            if *state == ElementState::Pressed {
+                                if eng.input.pointer_grabbed {
+                                    eng.input.pointer_grabbed = false;
+                                    window
+                                        .set_cursor_grab(winit::window::CursorGrabMode::None)
+                                        .unwrap();
+                                    window.set_cursor_visible(true);
+                                } else {
+                                    eng.input.pointer_grabbed = true;
+                                    window
+                                        .set_cursor_grab(winit::window::CursorGrabMode::Confined)
+                                        .unwrap();
+                                    window.set_cursor_visible(false);
+                                }
                             }
                         }
                     }
@@ -271,7 +271,7 @@ fn main() {
                     event: DeviceEvent::MouseMotion { delta },
                     ..
                 } => {
-                    if cursor_grabbed {
+                    if eng.input.pointer_grabbed {
                         eng.input.pointer_delta += Vec2::new(delta.0 as f32, delta.1 as f32);
                     }
                 }
@@ -335,8 +335,11 @@ fn make_ui(scene: &mut renderer::Scene) -> Handle<Node> {
             },
             style: Style {
                 color: Color::GREY,
+                hovered_color: Some(Color::BLUE),
+                pressed_color: Some(Color::GREEN),
                 ..Default::default()
             },
+            on_click: Some(|_| println!("Clicked!")),
             ..Default::default()
         }),
     );
