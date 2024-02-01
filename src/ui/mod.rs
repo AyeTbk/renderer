@@ -4,8 +4,8 @@ use glam::Vec2;
 use winit::event::MouseButton;
 
 use crate::{
-    arena::Handle, engine::Context, renderer::pipeline2d::uibox_instance::UiBoxInstance, Color,
-    Node, Scene,
+    engine::Context, renderer::pipeline2d::uibox_instance::UiBoxInstance, scene::NodeId, Color,
+    Scene,
 };
 
 #[derive(Debug, Default, Clone)]
@@ -14,7 +14,9 @@ pub struct UiBox {
     pub state: UiBoxState,
     pub layout: Layout,
     pub style: Style,
+    pub text: Option<String>,
     pub on_click: Option<fn(&mut Context)>,
+    pub active: bool,
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -77,6 +79,8 @@ pub struct Style {
     pub color: Color,
     pub hovered_color: Option<Color>,
     pub pressed_color: Option<Color>,
+    pub active_color: Option<Color>,
+    pub font_size: f32,
 }
 
 impl Default for Style {
@@ -85,11 +89,13 @@ impl Default for Style {
             color: Color::TRANSPARENT,
             hovered_color: None,
             pressed_color: None,
+            active_color: None,
+            font_size: 16.0,
         }
     }
 }
 
-pub fn layout(ui_root_id: Handle<Node>, scene: &mut Scene, context: &Context) {
+pub fn layout(ui_root_id: NodeId, scene: &mut Scene, context: &Context) {
     // Layout ui root
     let Some(root_uibox) = scene.get_mut(ui_root_id).as_uibox_mut() else {
         return;
@@ -112,7 +118,7 @@ pub fn layout(ui_root_id: Handle<Node>, scene: &mut Scene, context: &Context) {
     };
 
     // Recursively layout the whole UI
-    fn layout_children(node_id: Handle<Node>, scene: &mut Scene, context: &Context) {
+    fn layout_children(node_id: NodeId, scene: &mut Scene, context: &Context) {
         let Some(uibox) = scene.get_mut(node_id).as_uibox_mut() else {
             return;
         };
@@ -130,7 +136,7 @@ pub fn layout(ui_root_id: Handle<Node>, scene: &mut Scene, context: &Context) {
         let rect = uibox.rect.shrunk(layout_data.padding);
         let dir = layout_data.direction;
 
-        let mut children_data: BTreeMap<Handle<Node>, LayoutInfo> = scene
+        let mut children_data: BTreeMap<NodeId, LayoutInfo> = scene
             .children_of(node_id)
             .iter()
             .copied()
@@ -220,8 +226,8 @@ pub fn layout(ui_root_id: Handle<Node>, scene: &mut Scene, context: &Context) {
     layout_children(ui_root_id, scene, context);
 }
 
-pub fn input(ui_root_id: Handle<Node>, scene: &mut Scene, context: &mut Context) {
-    fn gather_ui_nodes(node_id: Handle<Node>, scene: &Scene, ui_nodes: &mut Vec<Handle<Node>>) {
+pub fn input(ui_root_id: NodeId, scene: &mut Scene, context: &mut Context) {
+    fn gather_ui_nodes(node_id: NodeId, scene: &Scene, ui_nodes: &mut Vec<NodeId>) {
         if scene.get(node_id).as_uibox().is_none() {
             return;
         }
@@ -234,7 +240,12 @@ pub fn input(ui_root_id: Handle<Node>, scene: &mut Scene, context: &mut Context)
     gather_ui_nodes(ui_root_id, scene, &mut ui_nodes);
 
     for node_id in ui_nodes {
-        let uibox = scene.get_mut(node_id).as_uibox_mut().unwrap();
+        let node = scene.get_mut(node_id);
+        if let Some(update_fn) = node.update_fn {
+            update_fn(node, context);
+        }
+
+        let uibox = node.as_uibox_mut().unwrap();
 
         if uibox.rect.contains(context.input.pointer_pos) && !context.input.pointer_grabbed {
             if context.input.is_button_pressed(MouseButton::Left) {
@@ -253,13 +264,18 @@ pub fn input(ui_root_id: Handle<Node>, scene: &mut Scene, context: &mut Context)
     }
 }
 
-pub fn paint(ui_root_id: Handle<Node>, scene: &Scene, context: &mut Context) {
-    fn aux(node_id: Handle<Node>, scene: &Scene, instances: &mut Vec<UiBoxInstance>) {
+pub fn paint(ui_root_id: NodeId, scene: &Scene, context: &mut Context) {
+    fn aux(
+        node_id: NodeId,
+        scene: &Scene,
+        context: &mut Context,
+        instances: &mut Vec<UiBoxInstance>,
+    ) {
         let Some(uibox) = scene.get(node_id).as_uibox() else {
             return;
         };
 
-        let color = match (
+        let mut color = match (
             uibox.state,
             uibox.style.hovered_color,
             uibox.style.pressed_color,
@@ -269,17 +285,32 @@ pub fn paint(ui_root_id: Handle<Node>, scene: &Scene, context: &mut Context) {
             _ => uibox.style.color,
         };
 
+        if let (true, Some(col)) = (uibox.active, uibox.style.active_color) {
+            color = col;
+        }
+
         instances.push(UiBoxInstance {
             position: uibox.rect.pos.to_array(),
             size: uibox.rect.size.to_array(),
             color: color.to_array(),
         });
 
+        if let Some(text) = uibox.text.as_ref() {
+            let content_rect = uibox.rect.shrunk(uibox.layout.padding);
+            context.visual_server.set_text(
+                node_id,
+                content_rect.pos,
+                text.as_bytes(),
+                uibox.style.font_size,
+                uibox.rect.size.x,
+            );
+        }
+
         for &child_id in scene.children_of(node_id) {
-            aux(child_id, scene, instances);
+            aux(child_id, scene, context, instances);
         }
     }
     let mut instances = Vec::new();
-    aux(ui_root_id, scene, &mut instances);
+    aux(ui_root_id, scene, context, &mut instances);
     context.visual_server.set_uiboxes(&instances);
 }

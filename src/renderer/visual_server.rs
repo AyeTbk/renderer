@@ -3,15 +3,19 @@ use std::{
     sync::Arc,
 };
 
-use glam::{Affine3A, Mat4, UVec2, Vec2, Vec3, Vec3Swizzles, Vec4, Vec4Swizzles};
+use glam::{Affine3A, Mat4, UVec2, Vec2, Vec3, Vec4, Vec4Swizzles};
 use log::warn;
 
 // TODO Find ways to reduce coupling between the renderer and the rest of the engine, to
 // eventually make it easy to extract in a separate crate (mostly in hopes of getting
 // better compile times). This goes for AssetServer too, I guess.
 use crate::{
-    arena::Handle, asset_server::AssetChanges, image::Image, material::BillboardMode,
-    scene::UniqueNodeId, AssetServer, Camera, Color, Light, Material, Mesh,
+    arena::Handle,
+    asset_server::AssetChanges,
+    image::Image,
+    material::BillboardMode,
+    scene::{NodeId, UniqueNodeId},
+    AssetServer, Camera, Color, Light, Material, Mesh,
 };
 
 use super::{
@@ -147,6 +151,10 @@ impl VisualServer {
     pub fn set_msaa(&mut self, sample_count: u32) {
         self.render_target.sample_count = sample_count;
         self.recreate_render_target();
+    }
+
+    pub fn msaa_sample_count(&self) -> u32 {
+        self.render_target.sample_count
     }
 
     pub fn set_font_image(&mut self, handle: Handle<Image>, asset_server: &AssetServer) {
@@ -509,15 +517,22 @@ impl VisualServer {
         }
     }
 
-    pub fn set_text(&mut self, id: UniqueNodeId, transform: &Affine3A, text: &[u8], size: f32) {
-        let offset = transform.translation.xy();
+    pub fn set_text(
+        &mut self,
+        id: NodeId,
+        position: Vec2,
+        text: &[u8],
+        size: f32,
+        _max_width: f32,
+    ) {
+        let offset = position;
         let glyphs = text
             .iter()
             .enumerate()
             .map(|(i, &id)| {
-                let id = id.min(127);
+                let id = u8::min(id, 127);
                 GlyphInstance::new(
-                    offset + Vec2::new(i as f32 * size * 0.5, 0.0),
+                    offset + Vec2::new(i as f32 * size * 1.1667 * 0.5, 0.0),
                     Vec2::new(size * 1.1667 * 0.5, size),
                     id,
                 )
@@ -841,7 +856,7 @@ struct RenderScene {
     textures: HashMap<Handle<Image>, wgpu::Texture>,
     lights: HashMap<UniqueNodeId, RenderLight>,
     mesh_instances: HashMap<UniqueNodeId, RenderMeshInstance>,
-    texts: HashMap<UniqueNodeId, RenderText>,
+    texts: HashMap<NodeId, RenderText>,
     fullscreen_texture: Option<RenderFullscreenTexture>,
 }
 

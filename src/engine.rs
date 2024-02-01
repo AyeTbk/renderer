@@ -147,14 +147,6 @@ impl Engine {
                     context,
                 );
             }
-            NodeData::Text(text, size) => {
-                context.visual_server.set_text(
-                    unique_node_id,
-                    &node.transform, // Not global!! Intended (for now)
-                    text,
-                    *size,
-                );
-            }
             NodeData::UiBox(_) => {
                 ui::layout(node_id, scene, context);
                 ui::input(node_id, scene, context);

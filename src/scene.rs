@@ -88,10 +88,6 @@ impl Node {
         Self::with_data(NodeData::Scene(Box::new(scene)))
     }
 
-    pub fn new_text(text: impl Into<Vec<u8>>, size: f32) -> Self {
-        Self::with_data(NodeData::Text(text.into(), size))
-    }
-
     pub fn new_uibox(uibox: UiBox) -> Self {
         Self::with_data(NodeData::UiBox(uibox))
     }
@@ -136,6 +132,5 @@ pub enum NodeData {
     Light(Light),
     Mesh(Handle<Mesh>),
     Scene(Box<Scene>),
-    Text(Vec<u8>, f32),
     UiBox(UiBox),
 }

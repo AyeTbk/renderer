@@ -71,14 +71,14 @@ fn fs_main(in: VertexOutput) -> @location(0) vec4f {
 }
 
 fn fs_signed_distance_field(in: VertexOutput) -> vec4f {
-    let fill_color = vec3f(0.9);
+    let fill_color = vec3f(1.0);
     let outline_color = vec3f(0.0);
     
     // TODO: potential improvement: have these values automatically calculated from data about the sdffont
     // instead of hand picking them.
     let fill_smoothcenter = 0.3;
     let outline_smoothcenter = 0.7;
-    let smoothing = 0.2;
+    let smoothing = 0.3;
 
     let sd = textureSample(font_atlas, tex_sampler, in.uv);
     

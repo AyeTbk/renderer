@@ -55,17 +55,6 @@ fn main() {
             .with_transform(Affine3A::from_rotation_y(-std::f32::consts::FRAC_PI_2)),
     );
 
-    eng.scene.add_allocate_child(
-        eng.scene.root,
-        Node::new_text("Hello text from scene!", 18.0)
-            .with_transform(Affine3A::from_translation(Vec3::new(20.0, 20.0, 0.0))),
-    );
-    eng.scene.add_allocate_child(
-        eng.scene.root,
-        Node::new_text("wow many texts.", 18.0)
-            .with_transform(Affine3A::from_translation(Vec3::new(20.0, 40.0, 0.0))),
-    );
-
     // Setup first person camera
     eng.scene.add_allocate_child(
         eng.scene.root,
@@ -308,17 +297,34 @@ fn make_ui(scene: &mut renderer::Scene) -> Handle<Node> {
         }),
     );
 
-    scene.add_allocate_child(
+    let _aa_title = scene.add_allocate_child(
         ui_root,
         Node::new_uibox(UiBox {
             layout: Layout {
                 h_extend: true,
-                height: 150.0,
-                padding: 20.0,
+                height: 22.0,
                 ..Default::default()
             },
             style: Style {
-                color: Color::BLACK,
+                font_size: 16.0,
+                ..Default::default()
+            },
+            text: Some(String::from("Antialiasing")),
+            ..Default::default()
+        }),
+    );
+
+    let aa_options = scene.add_allocate_child(
+        ui_root,
+        Node::new_uibox(UiBox {
+            layout: Layout {
+                direction: LayoutDirection::Horizontal,
+                h_extend: true,
+                height: 34.0,
+                padding: 10.0,
+                ..Default::default()
+            },
+            style: Style {
                 ..Default::default()
             },
             ..Default::default()
@@ -326,21 +332,62 @@ fn make_ui(scene: &mut renderer::Scene) -> Handle<Node> {
     );
 
     scene.add_allocate_child(
-        ui_root,
+        aa_options,
         Node::new_uibox(UiBox {
             layout: Layout {
                 h_extend: true,
-                height: 50.0,
+                height: 24.0,
+                padding: 10.0,
                 ..Default::default()
             },
             style: Style {
-                color: Color::GREY,
-                hovered_color: Some(Color::BLUE),
-                pressed_color: Some(Color::GREEN),
+                color: Color::new_rgb(0.18, 0.18, 0.21),
+                hovered_color: Some(Color::new_rgb(0.22, 0.22, 0.25)),
+                pressed_color: Some(Color::new_rgb(0.16, 0.16, 0.19)),
+                active_color: Some(Color::new_rgb(0.3, 0.35, 0.45)),
+                font_size: 14.0,
                 ..Default::default()
             },
-            on_click: Some(|_| println!("Clicked!")),
+            text: Some(String::from("None")),
+            on_click: Some(|ctx| ctx.visual_server.set_msaa(1)),
             ..Default::default()
+        })
+        .with_update(|node, ctx| {
+            if ctx.visual_server.msaa_sample_count() == 1 {
+                node.as_uibox_mut().unwrap().active = true;
+            } else {
+                node.as_uibox_mut().unwrap().active = false;
+            }
+        }),
+    );
+
+    scene.add_allocate_child(
+        aa_options,
+        Node::new_uibox(UiBox {
+            layout: Layout {
+                h_extend: true,
+                height: 24.0,
+                padding: 10.0,
+                ..Default::default()
+            },
+            style: Style {
+                color: Color::new_rgb(0.18, 0.18, 0.21),
+                hovered_color: Some(Color::new_rgb(0.22, 0.22, 0.25)),
+                pressed_color: Some(Color::new_rgb(0.16, 0.16, 0.19)),
+                active_color: Some(Color::new_rgb(0.3, 0.35, 0.45)),
+                font_size: 14.0,
+                ..Default::default()
+            },
+            text: Some(String::from("MSAAx4")),
+            on_click: Some(|ctx| ctx.visual_server.set_msaa(4)),
+            ..Default::default()
+        })
+        .with_update(|node, ctx| {
+            if ctx.visual_server.msaa_sample_count() == 4 {
+                node.as_uibox_mut().unwrap().active = true;
+            } else {
+                node.as_uibox_mut().unwrap().active = false;
+            }
         }),
     );
 
