@@ -48,6 +48,7 @@ impl<'a> UiBuilder<'a> {
                 h_extend: true,
                 height: 24.0 + 10.0 + 20.0, // button height + padding + margin-bottom
                 padding: 10.0,
+                gap: 2.0,
                 ..Default::default()
             },
             ..Default::default()

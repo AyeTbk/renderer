@@ -266,7 +266,7 @@ fn make_ui(scene: &mut renderer::Scene) {
     UiBuilder::new(scene).container(
         Node::new_uibox(UiBox {
             layout: Layout {
-                width: 250.0,
+                width: 225.0,
                 v_extend: true,
                 padding: 20.0,
                 ..Default::default()

@@ -58,6 +58,7 @@ pub struct Layout {
     pub height: f32,
     pub padding: f32,
     pub direction: LayoutDirection,
+    pub gap: f32,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -167,6 +168,10 @@ pub fn layout(ui_root_id: NodeId, scene: &mut Scene, context: &Context) {
 
         // # Compute children rects
         let mut free_axis_space = axis_size(rect);
+        if !children_data.is_empty() {
+            let gap_count = children_data.len() - 1;
+            free_axis_space -= layout_data.gap * gap_count as f32;
+        }
         let mut extend_children_count = 0;
 
         // ## Compute sizes
@@ -202,7 +207,7 @@ pub fn layout(ui_root_id: NodeId, scene: &mut Scene, context: &Context) {
         let mut axis_progress = axis_pos(rect);
         for (_, child_info) in &mut children_data {
             child_info.axis_pos = axis_progress;
-            axis_progress += child_info.axis_size;
+            axis_progress += child_info.axis_size + layout_data.gap;
 
             child_info.crossaxis_pos = crossaxis_pos(rect);
         }
