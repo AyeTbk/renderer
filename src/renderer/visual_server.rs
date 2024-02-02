@@ -143,18 +143,22 @@ impl VisualServer {
         self.recreate_render_target();
     }
 
+    pub fn render_size_factor(&self) -> f32 {
+        self.settings.render_size_factor
+    }
+
     pub fn set_render_size_factor(&mut self, factor: f32) {
         self.settings.render_size_factor = factor;
         self.recreate_render_target();
     }
 
+    pub fn msaa_sample_count(&self) -> u32 {
+        self.render_target.sample_count
+    }
+
     pub fn set_msaa(&mut self, sample_count: u32) {
         self.render_target.sample_count = sample_count;
         self.recreate_render_target();
-    }
-
-    pub fn msaa_sample_count(&self) -> u32 {
-        self.render_target.sample_count
     }
 
     pub fn set_font_image(&mut self, handle: Handle<Image>, asset_server: &AssetServer) {

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use asset_image::Image;
 use glam::{Affine3A, Mat3A, Quat, UVec2, Vec2, Vec3, Vec3A};
-use renderer::{arena::Handle, Color, Engine, Light, Node};
+use renderer::{Color, Engine, Light, Node};
 use winit::{
     dpi::PhysicalSize,
     event::{DeviceEvent, ElementState, Event, KeyEvent, MouseButton, WindowEvent},
@@ -49,14 +49,14 @@ fn main() {
         .load_scene("data/scenes/flight/FlightHelmet.gltf")
         .unwrap();
     let helmet_scene = eng.asset_server.get(helmet).clone();
-    eng.scene.add_allocate_child(
+    eng.scene.add_child(
         eng.scene.root,
         Node::new_scene(helmet_scene)
             .with_transform(Affine3A::from_rotation_y(-std::f32::consts::FRAC_PI_2)),
     );
 
     // Setup first person camera
-    eng.scene.add_allocate_child(
+    eng.scene.add_child(
         eng.scene.root,
         Node::new_camera(Default::default())
             .with_transform(
@@ -90,7 +90,7 @@ fn main() {
     );
 
     // Lights
-    let dirlight = eng.scene.add_allocate_child(
+    let dirlight = eng.scene.add_child(
         eng.scene.root,
         Node::new_light(Light::directional().with_color(Color::new(1.0, 0.9, 0.8, 0.9)))
             .with_transform(
@@ -108,30 +108,12 @@ fn main() {
     );
     let dirlight = eng.scene.make_unique_node_id(dirlight);
 
-    let dirlight2 = eng.scene.add_allocate_child(
-        eng.scene.root,
-        Node::new_light(Light::directional().with_color(Color::new(0.2, 0.4, 1.0, 1.0)))
-            .with_transform(
-                Affine3A::look_at_lh(
-                    Vec3::new(15.0, 5.5, 16.0),
-                    Vec3::new(0.0, 0.0, 0.0),
-                    Vec3::Y,
-                )
-                .inverse(),
-            )
-            .with_update(|node, ctx| {
-                let angle = ctx.time.delta * 0.025;
-                node.transform = Affine3A::from_rotation_y(angle) * node.transform;
-            }),
-    );
-    eng.scene.make_unique_node_id(dirlight2);
-
     // = Point light =
-    // eng.scene.add_allocate_child(
-    //     eng.scene.root,
-    //     Node::new_light(Light::point(4.0).with_color(Color::new(1.0, 0.01, 0.005, 2.0)))
-    //         .with_transform(Affine3A::from_translation(Vec3::new(0.0, 1.0, 1.0))),
-    // );
+    eng.scene.add_child(
+        eng.scene.root,
+        Node::new_light(Light::point(4.0).with_color(Color::new(1.0, 0.01, 0.005, 2.0)))
+            .with_transform(Affine3A::from_translation(Vec3::new(0.0, 1.0, 1.0))),
+    );
 
     event_loop
         .run(move |event, elwt| {
@@ -277,11 +259,11 @@ fn physical_size_to_uvec2(size: PhysicalSize<u32>) -> UVec2 {
     UVec2::new(size.width, size.height)
 }
 
-fn make_ui(scene: &mut renderer::Scene) -> Handle<Node> {
+fn make_ui(scene: &mut renderer::Scene) {
+    use renderer::ui::helpers::*;
     use renderer::ui::*;
 
-    let ui_root = scene.add_allocate_child(
-        scene.root,
+    UiBuilder::new(scene).container(
         Node::new_uibox(UiBox {
             layout: Layout {
                 width: 250.0,
@@ -290,106 +272,67 @@ fn make_ui(scene: &mut renderer::Scene) -> Handle<Node> {
                 ..Default::default()
             },
             style: Style {
-                color: Color::new(0.13, 0.13, 0.15, 0.5),
+                color: Color::new(0.13, 0.13, 0.15, 0.8),
                 ..Default::default()
             },
             ..Default::default()
         }),
+        |b| {
+            b //
+                .title("Antialiasing")
+                .button_group(|b| {
+                    b.button(
+                        "None",
+                        Some(|ctx| ctx.visual_server.set_msaa(1)),
+                        Some(|node, ctx| {
+                            node.as_uibox_mut().unwrap().active =
+                                ctx.visual_server.msaa_sample_count() == 1;
+                        }),
+                    )
+                    .button(
+                        "MSAAx4",
+                        Some(|ctx| ctx.visual_server.set_msaa(4)),
+                        Some(|node, ctx| {
+                            node.as_uibox_mut().unwrap().active =
+                                ctx.visual_server.msaa_sample_count() == 4;
+                        }),
+                    );
+                })
+                .title("Resolution factor")
+                .button_group(|b| {
+                    b.button(
+                        ".25x",
+                        Some(|ctx| ctx.visual_server.set_render_size_factor(0.25)),
+                        Some(|node, ctx| {
+                            node.as_uibox_mut().unwrap().active =
+                                ctx.visual_server.render_size_factor() == 0.25;
+                        }),
+                    )
+                    .button(
+                        ".5x",
+                        Some(|ctx| ctx.visual_server.set_render_size_factor(0.5)),
+                        Some(|node, ctx| {
+                            node.as_uibox_mut().unwrap().active =
+                                ctx.visual_server.render_size_factor() == 0.5;
+                        }),
+                    )
+                    .button(
+                        "1x",
+                        Some(|ctx| ctx.visual_server.set_render_size_factor(1.0)),
+                        Some(|node, ctx| {
+                            node.as_uibox_mut().unwrap().active =
+                                ctx.visual_server.render_size_factor() == 1.0;
+                        }),
+                    )
+                    .button(
+                        "2x",
+                        Some(|ctx| ctx.visual_server.set_render_size_factor(2.0)),
+                        Some(|node, ctx| {
+                            node.as_uibox_mut().unwrap().active =
+                                ctx.visual_server.render_size_factor() == 2.0;
+                        }),
+                    );
+                });
+        },
     );
-
-    let _aa_title = scene.add_allocate_child(
-        ui_root,
-        Node::new_uibox(UiBox {
-            layout: Layout {
-                h_extend: true,
-                height: 22.0,
-                ..Default::default()
-            },
-            style: Style {
-                font_size: 16.0,
-                ..Default::default()
-            },
-            text: Some(String::from("Antialiasing")),
-            ..Default::default()
-        }),
-    );
-
-    let aa_options = scene.add_allocate_child(
-        ui_root,
-        Node::new_uibox(UiBox {
-            layout: Layout {
-                direction: LayoutDirection::Horizontal,
-                h_extend: true,
-                height: 34.0,
-                padding: 10.0,
-                ..Default::default()
-            },
-            style: Style {
-                ..Default::default()
-            },
-            ..Default::default()
-        }),
-    );
-
-    scene.add_allocate_child(
-        aa_options,
-        Node::new_uibox(UiBox {
-            layout: Layout {
-                h_extend: true,
-                height: 24.0,
-                padding: 10.0,
-                ..Default::default()
-            },
-            style: Style {
-                color: Color::new_rgb(0.18, 0.18, 0.21),
-                hovered_color: Some(Color::new_rgb(0.22, 0.22, 0.25)),
-                pressed_color: Some(Color::new_rgb(0.16, 0.16, 0.19)),
-                active_color: Some(Color::new_rgb(0.3, 0.35, 0.45)),
-                font_size: 14.0,
-                ..Default::default()
-            },
-            text: Some(String::from("None")),
-            on_click: Some(|ctx| ctx.visual_server.set_msaa(1)),
-            ..Default::default()
-        })
-        .with_update(|node, ctx| {
-            if ctx.visual_server.msaa_sample_count() == 1 {
-                node.as_uibox_mut().unwrap().active = true;
-            } else {
-                node.as_uibox_mut().unwrap().active = false;
-            }
-        }),
-    );
-
-    scene.add_allocate_child(
-        aa_options,
-        Node::new_uibox(UiBox {
-            layout: Layout {
-                h_extend: true,
-                height: 24.0,
-                padding: 10.0,
-                ..Default::default()
-            },
-            style: Style {
-                color: Color::new_rgb(0.18, 0.18, 0.21),
-                hovered_color: Some(Color::new_rgb(0.22, 0.22, 0.25)),
-                pressed_color: Some(Color::new_rgb(0.16, 0.16, 0.19)),
-                active_color: Some(Color::new_rgb(0.3, 0.35, 0.45)),
-                font_size: 14.0,
-                ..Default::default()
-            },
-            text: Some(String::from("MSAAx4")),
-            on_click: Some(|ctx| ctx.visual_server.set_msaa(4)),
-            ..Default::default()
-        })
-        .with_update(|node, ctx| {
-            if ctx.visual_server.msaa_sample_count() == 4 {
-                node.as_uibox_mut().unwrap().active = true;
-            } else {
-                node.as_uibox_mut().unwrap().active = false;
-            }
-        }),
-    );
-
-    ui_root
 }

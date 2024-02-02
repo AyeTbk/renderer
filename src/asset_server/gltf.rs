@@ -143,7 +143,7 @@ impl<'a> Write<'a> {
 
         node.transform = Self::gltf_transform_to_transform(gltf_node.transform());
 
-        let node_id = scene.add_allocate_child(parent, node);
+        let node_id = scene.add_child(parent, node);
 
         // Handle node's children
         for gltf_child in gltf_node.children() {
