@@ -43,6 +43,7 @@ pub struct VisualServer {
     //
     uibox_instance_buffer: wgpu::Buffer,
     uibox_instance_count: u32,
+    text_instance_buffers: Vec<RenderText>,
     //
     render_target: RenderTarget,
     pipeline3d: Pipeline3d,
@@ -123,6 +124,7 @@ impl VisualServer {
             //
             uibox_instance_buffer,
             uibox_instance_count: 0,
+            text_instance_buffers: Vec::new(),
             //
             render_target,
             pipeline3d,
@@ -245,7 +247,7 @@ impl VisualServer {
             .render(&mut encoder, &commands, &self.render_target);
 
         let mut render_text_commands = Vec::new();
-        for text in self.render_scene.texts.values() {
+        for text in &self.text_instance_buffers {
             render_text_commands.push(RenderCommandText {
                 instance_buffer: &text.instance_buffer,
                 instance_count: text.instance_count,
@@ -521,36 +523,31 @@ impl VisualServer {
         }
     }
 
-    pub fn set_text(
-        &mut self,
-        id: NodeId,
-        position: Vec2,
-        text: &[u8],
-        size: f32,
-        _max_width: f32,
-    ) {
-        let offset = position;
+    pub fn reset_texts(&mut self) {
+        self.text_instance_buffers.clear();
+    }
+
+    pub fn add_text(&mut self, _id: NodeId, text: TextDescriptor) {
+        let offset = text.position;
         let glyphs = text
+            .text
             .iter()
             .enumerate()
             .map(|(i, &id)| {
                 let id = u8::min(id, 127);
                 GlyphInstance::new(
-                    offset + Vec2::new(i as f32 * size * 1.1667 * 0.5, 0.0),
-                    Vec2::new(size * 1.1667 * 0.5, size),
+                    offset + Vec2::new(i as f32 * text.font_size * 1.1667 * 0.5, 0.0),
+                    Vec2::new(text.font_size * 1.1667 * 0.5, text.font_size),
                     id,
                 )
             })
             .collect::<Vec<_>>();
         let instance_buffer = self.backend.create_vertex_buffer(&glyphs);
 
-        self.render_scene.texts.insert(
-            id,
-            RenderText {
-                instance_buffer,
-                instance_count: glyphs.len() as u32,
-            },
-        );
+        self.text_instance_buffers.push(RenderText {
+            instance_buffer,
+            instance_count: glyphs.len() as u32,
+        });
     }
 
     pub fn reset_scene(&mut self) {
@@ -860,7 +857,6 @@ struct RenderScene {
     textures: HashMap<Handle<Image>, wgpu::Texture>,
     lights: HashMap<UniqueNodeId, RenderLight>,
     mesh_instances: HashMap<UniqueNodeId, RenderMeshInstance>,
-    texts: HashMap<NodeId, RenderText>,
     fullscreen_texture: Option<RenderFullscreenTexture>,
 }
 
@@ -1123,6 +1119,13 @@ fn create_render_target(
         sample_count,
         texture,
     }
+}
+
+pub struct TextDescriptor<'a> {
+    pub text: &'a [u8],
+    pub position: Vec2,
+    pub font_size: f32,
+    pub max_width: f32,
 }
 
 struct Settings {

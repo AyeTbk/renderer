@@ -4,8 +4,10 @@ use glam::Vec2;
 use winit::event::MouseButton;
 
 use crate::{
-    engine::Context, renderer::pipeline2d::uibox_instance::UiBoxInstance, scene::NodeId, Color,
-    Scene,
+    engine::Context,
+    renderer::{pipeline2d::uibox_instance::UiBoxInstance, visual_server::TextDescriptor},
+    scene::NodeId,
+    Color, Scene,
 };
 
 pub mod helpers;
@@ -19,6 +21,7 @@ pub struct UiBox {
     pub text: Option<String>,
     pub on_click: Option<fn(&mut Context)>,
     pub active: bool,
+    pub hide: bool,
 }
 
 #[derive(Debug, Default, Clone, Copy)]
@@ -103,6 +106,11 @@ pub fn layout(ui_root_id: NodeId, scene: &mut Scene, context: &Context) {
     let Some(root_uibox) = scene.get_mut(ui_root_id).as_uibox_mut() else {
         return;
     };
+
+    if root_uibox.hide {
+        return;
+    }
+
     let canvas_size = context.display.window_inner_size.as_vec2();
     root_uibox.rect = Rect {
         pos: Vec2::ZERO,
@@ -143,16 +151,16 @@ pub fn layout(ui_root_id: NodeId, scene: &mut Scene, context: &Context) {
             .children_of(node_id)
             .iter()
             .copied()
-            .filter_map(|id| {
-                scene.get(id).as_uibox().map(|uibox| {
-                    (
-                        id,
-                        LayoutInfo {
-                            layout: uibox.layout.clone(),
-                            ..Default::default()
-                        },
-                    )
-                })
+            .filter_map(|id| scene.get(id).as_uibox().map(|uibox| (id, uibox)))
+            .filter(|(_, uibox)| !uibox.hide)
+            .map(|(id, uibox)| {
+                (
+                    id,
+                    LayoutInfo {
+                        layout: uibox.layout.clone(),
+                        ..Default::default()
+                    },
+                )
             })
             .collect();
 
@@ -235,23 +243,33 @@ pub fn layout(ui_root_id: NodeId, scene: &mut Scene, context: &Context) {
 
 pub fn input(ui_root_id: NodeId, scene: &mut Scene, context: &mut Context) {
     fn gather_ui_nodes(node_id: NodeId, scene: &Scene, ui_nodes: &mut Vec<NodeId>) {
-        if scene.get(node_id).as_uibox().is_none() {
+        let Some(uibox) = scene.get(node_id).as_uibox() else {
+            return;
+        };
+
+        if uibox.hide {
             return;
         }
+
+        ui_nodes.push(node_id);
+
         for &child_id in scene.children_of(node_id) {
             gather_ui_nodes(child_id, scene, ui_nodes);
         }
-        ui_nodes.push(node_id);
     }
     let mut ui_nodes = Vec::new();
     gather_ui_nodes(ui_root_id, scene, &mut ui_nodes);
 
-    for node_id in ui_nodes {
+    // Update UI nodes (skip root, which gets updated by the engine) (yes, this sucks)
+    for &node_id in ui_nodes.iter().skip(1) {
         let node = scene.get_mut(node_id);
         if let Some(update_fn) = node.update_fn {
             update_fn(node, context);
         }
+    }
 
+    for node_id in ui_nodes {
+        let node = scene.get_mut(node_id);
         let uibox = node.as_uibox_mut().unwrap();
 
         if uibox.rect.contains(context.input.pointer_pos) && !context.input.pointer_grabbed {
@@ -282,6 +300,10 @@ pub fn paint(ui_root_id: NodeId, scene: &Scene, context: &mut Context) {
             return;
         };
 
+        if uibox.hide {
+            return;
+        }
+
         let mut color = match (
             uibox.state,
             uibox.style.hovered_color,
@@ -304,12 +326,14 @@ pub fn paint(ui_root_id: NodeId, scene: &Scene, context: &mut Context) {
 
         if let Some(text) = uibox.text.as_ref() {
             let content_rect = uibox.rect.shrunk(uibox.layout.padding);
-            context.visual_server.set_text(
+            context.visual_server.add_text(
                 node_id,
-                content_rect.pos,
-                text.as_bytes(),
-                uibox.style.font_size,
-                uibox.rect.size.x,
+                TextDescriptor {
+                    text: text.as_bytes(),
+                    position: content_rect.pos,
+                    font_size: uibox.style.font_size,
+                    max_width: uibox.rect.size.x,
+                },
             );
         }
 
@@ -317,6 +341,9 @@ pub fn paint(ui_root_id: NodeId, scene: &Scene, context: &mut Context) {
             aux(child_id, scene, context, instances);
         }
     }
+
+    context.visual_server.reset_texts();
+
     let mut instances = Vec::new();
     aux(ui_root_id, scene, context, &mut instances);
     context.visual_server.set_uiboxes(&instances);

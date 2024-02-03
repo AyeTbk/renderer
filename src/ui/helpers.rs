@@ -24,6 +24,17 @@ impl<'a> UiBuilder<'a> {
         self
     }
 
+    pub fn v_spacer_big(&mut self) -> &mut Self {
+        self.add_child(Node::new_uibox(UiBox {
+            layout: Layout {
+                height: 20.0,
+                ..Default::default()
+            },
+            ..Default::default()
+        }));
+        self
+    }
+
     pub fn title(&mut self, text: &str) -> &mut Self {
         self.add_child(Node::new_uibox(UiBox {
             layout: Layout {
@@ -33,6 +44,23 @@ impl<'a> UiBuilder<'a> {
             },
             style: Style {
                 font_size: 16.0,
+                ..Default::default()
+            },
+            text: Some(String::from(text)),
+            ..Default::default()
+        }));
+        self
+    }
+
+    pub fn note(&mut self, text: &str) -> &mut Self {
+        self.add_child(Node::new_uibox(UiBox {
+            layout: Layout {
+                h_extend: true,
+                height: 22.0,
+                ..Default::default()
+            },
+            style: Style {
+                font_size: 12.0,
                 ..Default::default()
             },
             text: Some(String::from(text)),

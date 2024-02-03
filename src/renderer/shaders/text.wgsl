@@ -10,6 +10,7 @@ struct InstanceInput {
 struct VertexOutput {
     @builtin(position) clip_position: vec4f,
     @location(0) uv: vec2f,
+    @location(1) font_size: f32,
 };
 
 struct ViewportUniform {
@@ -33,6 +34,8 @@ fn vs_main(
     instance: InstanceInput,
 ) -> VertexOutput {
     var out: VertexOutput;
+    out.font_size = instance.scale.y;
+
     let viewport_size = vec2f(viewport.size);
 
     // Expects Topology::TriangleStrips, Ccw winding and 4 vertices
@@ -76,9 +79,16 @@ fn fs_signed_distance_field(in: VertexOutput) -> vec4f {
     
     // TODO: potential improvement: have these values automatically calculated from data about the sdffont
     // instead of hand picking them.
-    let fill_smoothcenter = 0.3;
+    let fill_smoothcenter = 0.35;
     let outline_smoothcenter = 0.7;
-    let smoothing = 0.3;
+    var smoothing = clamp(
+        map_range(in.font_size, 12.0, 24.0, 0.3, 0.15),
+        0.1,
+        0.9,
+    );
+    // 12px - 0.3
+    // 16px - 0.18
+    // 24px - 0.15
 
     let sd = textureSample(font_atlas, tex_sampler, in.uv);
     
@@ -92,4 +102,13 @@ fn fs_signed_distance_field(in: VertexOutput) -> vec4f {
     let color = mix(outline_color, fill_color, fill_alpha);
 
     return vec4f(color, alpha);
+}
+
+fn map_range(value: f32, from_min: f32, from_max: f32, to_min: f32, to_max: f32) -> f32 {
+    let from_range_size = from_max - from_min;
+    let value_from_ratio = (value - from_min) / from_range_size;
+
+    let to_range_size = to_max - to_min;
+    let mapped_value = to_min + value_from_ratio * to_range_size;
+    return mapped_value;
 }

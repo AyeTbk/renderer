@@ -62,6 +62,8 @@ impl Engine {
                 gizmo_image: self.gizmo_image,
             },
         );
+
+        self.input.swap_maps();
     }
 
     fn notify_asset_changes(&mut self) {

@@ -272,13 +272,21 @@ fn make_ui(scene: &mut renderer::Scene) {
                 ..Default::default()
             },
             style: Style {
-                color: Color::new(0.13, 0.13, 0.15, 0.8),
+                color: Color::new(0.13, 0.13, 0.15, 0.85),
                 ..Default::default()
             },
             ..Default::default()
+        })
+        .with_update(|node, ctx| {
+            if ctx.input.is_just_pressed(KeyCode::Tab) {
+                let uibox = node.as_uibox_mut().unwrap();
+                uibox.hide = !uibox.hide;
+            }
         }),
         |b| {
             b //
+                .note("press TAB to toggle")
+                .v_spacer_big()
                 .title("Antialiasing")
                 .button_group(|b| {
                     b.button(
