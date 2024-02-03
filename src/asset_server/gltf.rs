@@ -77,7 +77,8 @@ impl<'a> Write<'a> {
                         self.load_external_bin(path, read)?;
                     }
                     let bytes = self.get_bytes_from_view(&view, read)?;
-                    let image = Image::load_from_memory(bytes)?;
+                    let mut image = Image::load_from_memory(bytes)?;
+                    let _ = image.make_mips(); // NOTE this stinks, mipmaps are made on the CPU right now and it's super slow.
                     self.asset_server.add(image)
                 }
             };
