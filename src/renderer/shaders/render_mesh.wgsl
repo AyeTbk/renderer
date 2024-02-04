@@ -86,10 +86,12 @@ fn vs_main(
 @fragment
 fn fs_main_ambient_light_depth_prepass(in: VertexOutput) -> @location(0) vec4f {
     let normal = normalize(in.normal);
-    let base_color = material.base_color.rgba * textureSample(base_color_texture, material_sampler, in.uv).rgba;
+    var base_color = material.base_color.rgba * textureSample(base_color_texture, material_sampler, in.uv).rgba;
     
     if base_color.a < 0.5 {
         discard;
+    } else {
+        base_color.a = 1.0;
     }
 
     var ambient_light = base_color.rgb;

@@ -7,6 +7,8 @@ use wgpu::{
     BindGroupDescriptor,
 };
 
+use super::visual_server::RenderTarget;
+
 // Note:
 // Interesting reads
 // Nvidia Vulkan tips and tricks: https://developer.nvidia.com/blog/vulkan-dos-donts/#entry-content-comments
@@ -21,13 +23,11 @@ pub struct Backend {
     pub queue: wgpu::Queue,
     //
     show_texture_pipeline: wgpu::RenderPipeline,
-    show_texture_bind_group_layout: wgpu::BindGroupLayout,
-    show_texture_uniform_buffer: wgpu::Buffer,
+    pub show_texture_bind_group_layout: wgpu::BindGroupLayout,
+    pub show_texture_uniform_buffer: wgpu::Buffer,
     //
     material_bind_group_layout: wgpu::BindGroupLayout,
     model_bind_group_layout: wgpu::BindGroupLayout,
-    //
-    show_texture_sampler: wgpu::Sampler,
 }
 
 impl Backend {
@@ -209,7 +209,7 @@ impl Backend {
                     entry_point: "fs_main",
                     targets: &[Some(wgpu::ColorTargetState {
                         format: surface_config.format,
-                        blend: Some(wgpu::BlendState::REPLACE),
+                        blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
                 }),
@@ -229,18 +229,6 @@ impl Backend {
                 multiview: None,
             });
 
-        let show_texture_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("show texture sampler"),
-            address_mode_u: wgpu::AddressMode::Repeat,
-            address_mode_v: wgpu::AddressMode::Repeat,
-            address_mode_w: wgpu::AddressMode::Repeat,
-            mag_filter: wgpu::FilterMode::Nearest,
-            min_filter: wgpu::FilterMode::Linear,
-            mipmap_filter: wgpu::FilterMode::Nearest,
-            anisotropy_clamp: 1,
-            ..Default::default()
-        });
-
         Self {
             render_size,
             surface,
@@ -252,7 +240,6 @@ impl Backend {
             show_texture_uniform_buffer,
             material_bind_group_layout,
             model_bind_group_layout,
-            show_texture_sampler,
         }
     }
 
@@ -486,30 +473,13 @@ impl Backend {
         })
     }
 
-    pub fn render_texture(&mut self, texture: &wgpu::Texture) -> Result<(), wgpu::SurfaceError> {
+    pub fn render(
+        &mut self,
+        render_3d: &RenderTarget,
+        render_2d: &RenderTarget,
+    ) -> Result<(), wgpu::SurfaceError> {
         let surface_texture = self.surface.get_current_texture()?;
         let surface_view = surface_texture.texture.create_view(&Default::default());
-
-        let texture_view = texture.create_view(&Default::default());
-
-        let bind_group = self.device.create_bind_group(&BindGroupDescriptor {
-            label: Some("show texture bind group"),
-            layout: &self.show_texture_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: self.show_texture_uniform_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::TextureView(&texture_view),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: wgpu::BindingResource::Sampler(&self.show_texture_sampler),
-                },
-            ],
-        });
 
         let mut encoder = self
             .device
@@ -524,7 +494,7 @@ impl Backend {
                     view: &surface_view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color::RED),
+                        load: wgpu::LoadOp::Clear(wgpu::Color::GREEN),
                         store: wgpu::StoreOp::Store,
                     },
                 })],
@@ -533,7 +503,11 @@ impl Backend {
             });
 
             render_pass.set_pipeline(&self.show_texture_pipeline);
-            render_pass.set_bind_group(0, &bind_group, &[]);
+
+            render_pass.set_bind_group(0, &render_3d.backend_bind_group, &[]);
+            render_pass.draw(0..4, 0..1);
+
+            render_pass.set_bind_group(0, &render_2d.backend_bind_group, &[]);
             render_pass.draw(0..4, 0..1);
         }
 

@@ -45,7 +45,8 @@ pub struct VisualServer {
     uibox_instance_count: u32,
     text_instance_buffers: Vec<RenderText>,
     //
-    render_target: RenderTarget,
+    render_target_3d: RenderTarget,
+    render_target_2d: RenderTarget,
     pipeline3d: Pipeline3d,
     pipeline2d: Pipeline2d,
 }
@@ -81,17 +82,27 @@ impl VisualServer {
 
         let uibox_instance_buffer = backend.create_vertex_buffer::<UiBoxInstance>(&[]);
 
-        let render_target = create_render_target(
+        let render_target_3d = create_render_target(
             backend.render_size(),
             1,
             wgpu::TextureFormat::Rgba8UnormSrgb,
             Backend::DEPTH_TEXTURE_FORMAT,
+            &samplers.unfiltered,
+            &mut backend,
+        );
+
+        let render_target_2d = create_render_target(
+            backend.render_size(),
+            1,
+            wgpu::TextureFormat::Rgba8UnormSrgb,
+            Backend::DEPTH_TEXTURE_FORMAT,
+            &samplers.filtered,
             &mut backend,
         );
 
         let pipeline3d = Pipeline3d::new(
             &render_scene_data.uniform_buffer,
-            render_target.info(),
+            render_target_3d.info(),
             &mut backend,
             asset_server,
         );
@@ -99,7 +110,7 @@ impl VisualServer {
         let pipeline2d = Pipeline2d::new(
             &viewport_uniform_buffer,
             &font_texture,
-            render_target.info(),
+            render_target_2d.info(),
             &mut backend,
             asset_server,
         );
@@ -126,7 +137,8 @@ impl VisualServer {
             uibox_instance_count: 0,
             text_instance_buffers: Vec::new(),
             //
-            render_target,
+            render_target_3d,
+            render_target_2d,
             pipeline3d,
             pipeline2d,
         };
@@ -142,7 +154,7 @@ impl VisualServer {
 
     pub fn set_render_size(&mut self, render_size: UVec2) {
         self.backend.set_render_size(render_size);
-        self.recreate_render_target();
+        self.recreate_render_targets();
     }
 
     pub fn render_size_factor(&self) -> f32 {
@@ -151,16 +163,16 @@ impl VisualServer {
 
     pub fn set_render_size_factor(&mut self, factor: f32) {
         self.settings.render_size_factor = factor;
-        self.recreate_render_target();
+        self.recreate_render_targets();
     }
 
     pub fn msaa_sample_count(&self) -> u32 {
-        self.render_target.sample_count
+        self.render_target_3d.sample_count
     }
 
     pub fn set_msaa(&mut self, sample_count: u32) {
-        self.render_target.sample_count = sample_count;
-        self.recreate_render_target();
+        self.render_target_3d.sample_count = sample_count;
+        self.recreate_render_targets();
     }
 
     pub fn set_font_image(&mut self, handle: Handle<Image>, asset_server: &AssetServer) {
@@ -244,7 +256,7 @@ impl VisualServer {
                 });
 
         self.pipeline3d
-            .render(&mut encoder, &commands, &self.render_target);
+            .render(&mut encoder, &commands, &self.render_target_3d);
 
         let mut render_text_commands = Vec::new();
         for text in &self.text_instance_buffers {
@@ -271,7 +283,7 @@ impl VisualServer {
             texture: maybe_texture_command.as_ref(),
         };
         self.pipeline2d
-            .render(&mut encoder, &commands_2d, &self.render_target);
+            .render(&mut encoder, &commands_2d, &self.render_target_2d);
 
         // FIXME: Strive to minimise the amount of submits across the board / submit as much work as possible
         // to reduce overhead / wasted GPU cycles. Right now there is two submits, one here and one in backend,
@@ -279,13 +291,13 @@ impl VisualServer {
         self.backend.queue.submit(Some(encoder.finish()));
 
         self.backend
-            .render_texture(&self.render_target.output_color_texture())?;
+            .render(&self.render_target_3d, &self.render_target_2d)?;
 
         Ok(())
     }
 
     pub fn set_depth_fullscreen_texture(&mut self) {
-        let texture = &self.render_target.texture.depth();
+        let texture = &self.render_target_3d.texture.depth();
         let sampler = self.backend.create_sampler_non_filtering();
         let bind_group = self.pipeline2d.build_fullscreen_texture_bind_group(
             texture,
@@ -592,16 +604,32 @@ impl VisualServer {
             .notify_asset_changes(changes, &mut self.backend, asset_server);
     }
 
-    fn recreate_render_target(&mut self) {
-        let scaled_render_size =
+    fn recreate_render_targets(&mut self) {
+        let render_resolution_3d =
             (self.render_size().as_vec2() * self.settings.render_size_factor).as_uvec2();
 
-        let info = self.render_target.info();
-        self.render_target = create_render_target(
-            scaled_render_size,
+        let info = self.render_target_3d.info();
+        self.render_target_3d = create_render_target(
+            render_resolution_3d,
             info.sample_count,
             info.color_format,
             info.depth_format,
+            if self.settings.render_size_factor > 1.0 {
+                &self.samplers.filtered
+            } else {
+                &self.samplers.unfiltered
+            },
+            &mut self.backend,
+        );
+
+        let render_resolution_2d = self.render_size();
+        let info = self.render_target_2d.info();
+        self.render_target_2d = create_render_target(
+            render_resolution_2d,
+            info.sample_count,
+            info.color_format,
+            info.depth_format,
+            &self.samplers.filtered,
             &mut self.backend,
         );
 
@@ -612,9 +640,9 @@ impl VisualServer {
             .update_uniform_buffer(&self.viewport_uniform_buffer, viewport_uniform);
 
         self.pipeline3d
-            .update_render_target_info(self.render_target.info(), &mut self.backend);
+            .update_render_target_info(self.render_target_3d.info(), &mut self.backend);
         self.pipeline2d
-            .update_render_target_info(self.render_target.info(), &mut self.backend);
+            .update_render_target_info(self.render_target_2d.info(), &mut self.backend);
     }
 
     fn register_mesh(&mut self, handle: Handle<Mesh>, asset_server: &AssetServer) {
@@ -957,6 +985,7 @@ pub struct RenderTarget {
     pub color_format: wgpu::TextureFormat,
     pub depth_format: wgpu::TextureFormat,
     pub texture: RenderTargetTexture,
+    pub backend_bind_group: wgpu::BindGroup,
 }
 
 pub enum RenderTargetTexture {
@@ -977,6 +1006,13 @@ pub enum RenderTargetTexture {
 }
 
 impl RenderTargetTexture {
+    pub fn view(&self) -> &wgpu::TextureView {
+        match self {
+            Self::Simple { color_view, .. } => color_view,
+            Self::Multisampled { resolve_view, .. } => resolve_view,
+        }
+    }
+
     pub fn depth(&self) -> &wgpu::Texture {
         match self {
             Self::Simple { depth, .. } | Self::Multisampled { depth, .. } => depth,
@@ -996,13 +1032,6 @@ impl RenderTarget {
             sample_count: self.sample_count,
             color_format: self.color_format,
             depth_format: self.depth_format,
-        }
-    }
-
-    pub fn output_color_texture(&self) -> &wgpu::Texture {
-        match &self.texture {
-            RenderTargetTexture::Simple { color, .. } => color,
-            RenderTargetTexture::Multisampled { resolve, .. } => resolve,
         }
     }
 
@@ -1053,6 +1082,7 @@ fn create_render_target(
     sample_count: u32,
     color_format: wgpu::TextureFormat,
     depth_format: wgpu::TextureFormat,
+    sampler: &wgpu::Sampler,
     backend: &mut Backend,
 ) -> RenderTarget {
     let texture_size = wgpu::Extent3d {
@@ -1112,12 +1142,34 @@ fn create_render_target(
         }
     };
 
+    let backend_bind_group = backend
+        .device
+        .create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("show render target bind group"),
+            layout: &backend.show_texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: backend.show_texture_uniform_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(texture.view()),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Sampler(sampler),
+                },
+            ],
+        });
+
     RenderTarget {
         size,
         color_format,
         depth_format,
         sample_count,
         texture,
+        backend_bind_group,
     }
 }
 

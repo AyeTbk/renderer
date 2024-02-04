@@ -1,5 +1,5 @@
 use glam::Vec2;
-use wgpu::CommandEncoder;
+use wgpu::{Color, CommandEncoder};
 
 use crate::{arena::Handle, asset_server::AssetChanges, shader_source::ShaderSource, AssetServer};
 
@@ -273,7 +273,7 @@ impl Pipeline2d {
 
         let color_attachment = wgpu::RenderPassColorAttachment {
             ops: wgpu::Operations {
-                load: wgpu::LoadOp::Load,
+                load: wgpu::LoadOp::Clear(Color::TRANSPARENT),
                 store: wgpu::StoreOp::Store,
             },
             ..color_attachment
