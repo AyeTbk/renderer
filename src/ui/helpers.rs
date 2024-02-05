@@ -2,6 +2,10 @@ use crate::{engine::Context, scene::NodeId, Color, Node, Scene};
 
 use super::{Layout, LayoutDirection, Style, UiBox};
 
+const BUTTON_HEIGHT: f32 = 24.0;
+const BUTTON_GROUP_PADDING: f32 = 10.0;
+const BUTTON_GROUP_GAP: f32 = 2.0;
+
 pub struct UiBuilder<'a> {
     scene: &'a mut Scene,
     parent: NodeId,
@@ -36,6 +40,7 @@ impl<'a> UiBuilder<'a> {
     }
 
     pub fn title(&mut self, text: &str) -> &mut Self {
+        self.v_spacer_big();
         self.add_child(Node::new_uibox(UiBox {
             layout: Layout {
                 h_extend: true,
@@ -74,9 +79,9 @@ impl<'a> UiBuilder<'a> {
             layout: Layout {
                 direction: LayoutDirection::Horizontal,
                 h_extend: true,
-                height: 24.0 + 10.0 + 20.0, // button height + padding + margin-bottom
-                padding: 10.0,
-                gap: 2.0,
+                height: BUTTON_HEIGHT + BUTTON_GROUP_PADDING,
+                padding: BUTTON_GROUP_PADDING,
+                gap: BUTTON_GROUP_GAP,
                 ..Default::default()
             },
             ..Default::default()
@@ -85,6 +90,37 @@ impl<'a> UiBuilder<'a> {
             scene: self.scene,
             parent: group,
         });
+        self
+    }
+
+    pub fn button_list(&mut self, f: impl FnOnce(&mut UiBuilder)) -> &mut Self {
+        let list = self.add_child(Node::new_uibox(UiBox {
+            layout: Layout {
+                direction: LayoutDirection::Vertical,
+                h_extend: true,
+                height: 24.0 + 10.0, // button height + padding
+                padding: 10.0,
+                gap: 2.0,
+                ..Default::default()
+            },
+            ..Default::default()
+        }));
+        f(&mut UiBuilder {
+            scene: self.scene,
+            parent: list,
+        });
+
+        let children_count = self.scene.children_of(list).len();
+        let gap_count = children_count.saturating_sub(1) as f32;
+        self.scene
+            .get_mut(list)
+            .as_uibox_mut()
+            .unwrap()
+            .layout
+            .height = children_count as f32 * BUTTON_HEIGHT
+            + BUTTON_GROUP_PADDING
+            + gap_count * BUTTON_GROUP_GAP;
+
         self
     }
 

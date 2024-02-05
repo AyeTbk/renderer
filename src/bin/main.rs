@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use asset_image::Image;
 use glam::{Affine3A, Mat3A, Quat, UVec2, Vec2, Vec3, Vec3A};
-use renderer::{Color, Engine, Light, Node};
+use renderer::{Color, Engine, Light, Node, ToneMapping};
 use winit::{
     dpi::PhysicalSize,
     event::{DeviceEvent, ElementState, Event, KeyEvent, MouseButton, WindowEvent},
@@ -92,7 +92,7 @@ fn main() {
     // Lights
     let dirlight = eng.scene.add_child(
         eng.scene.root,
-        Node::new_light(Light::directional().with_color(Color::new(1.0, 0.9, 0.8, 0.9)))
+        Node::new_light(Light::directional().with_color(Color::new(1.0, 0.9, 0.8, 3.5)))
             .with_transform(
                 Affine3A::look_to_lh(
                     Vec3::new(-1.5, 20.0, -6.0),
@@ -286,7 +286,6 @@ fn make_ui(scene: &mut renderer::Scene) {
         |b| {
             b //
                 .note("press TAB to toggle")
-                .v_spacer_big()
                 .title("Antialiasing")
                 .button_group(|b| {
                     b.button(
@@ -338,6 +337,25 @@ fn make_ui(scene: &mut renderer::Scene) {
                         Some(|node, ctx| {
                             node.as_uibox_mut().unwrap().active =
                                 ctx.visual_server.render_size_factor() == 2.0;
+                        }),
+                    );
+                })
+                .title("Tone mapping")
+                .button_list(|b| {
+                    b.button(
+                        "None",
+                        Some(|ctx| ctx.visual_server.set_tone_mapping(ToneMapping::None)),
+                        Some(|node, ctx| {
+                            node.as_uibox_mut().unwrap().active =
+                                ctx.visual_server.tone_mapping() == ToneMapping::None;
+                        }),
+                    )
+                    .button(
+                        "Reinhard",
+                        Some(|ctx| ctx.visual_server.set_tone_mapping(ToneMapping::Reinhard)),
+                        Some(|node, ctx| {
+                            node.as_uibox_mut().unwrap().active =
+                                ctx.visual_server.tone_mapping() == ToneMapping::Reinhard;
                         }),
                     );
                 });

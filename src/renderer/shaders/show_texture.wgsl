@@ -23,7 +23,7 @@ fn vs_main(
 
 
 struct ShowTextureUniform {
-    size: vec2u,
+    tone_mapping: u32,
 };
 @group(0) @binding(0)
 var<uniform> render: ShowTextureUniform;
@@ -33,95 +33,29 @@ var tex_texture: texture_2d<f32>;
 @group(0) @binding(2)
 var tex_sampler: sampler;
 
+const TONE_MAPPING_NONE: u32 = 0u;
+const TONE_MAPPING_REINHARD: u32 = 1u;
+
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4f {
-    return hardware_bilinear(in);
-}
-
-/// Fast and simple. Only gives good results down to 1/2 downscaling. Below that,
-/// aliasing is introduced by the fact that bilinear filtering works on blocks
-/// of 2x2 pixels.
-/// Expects the sampler to use bilinear filtering.
-fn hardware_bilinear(in: VertexOutput) -> vec4f {
-    return textureSample(tex_texture, tex_sampler, in.uv);
-}
-
-/// Attempt at supporting non integer scaling and the ability to go below
-/// 1/2 downscaling with good results. Didn't check for the former and didn't work
-/// for the latter: aliasing is introduced when tested at 1/4 downscaling. I need
-/// to learn more about signal processing.
-/// Expects the sampler to use nearest filtering, but it'll work with bilinear too.
-fn fs_main_free_window_sampling(in: VertexOutput) -> vec4f {
-    let render_size = vec2f(render.size);
-    let texture_size = vec2f(textureDimensions(tex_texture));
-
-    let sampling_window_size = texture_size / render_size;
-    let sample_texel_count = vec2i(ceil(sampling_window_size));
-
-    // Top left corner of render pixel
-    let pixel_pos = floor(in.uv * render_size);
-
-    var total_coverage = 0.0;
-    var weighted_samples_sum = vec4f(0.0);
-    for (var i = 0; i < sample_texel_count.x; i++) {
-        for (var j = 0; j < sample_texel_count.y; j++) {
-            // Top left corner of render pixel
-            let sample_pos = pixel_pos * sampling_window_size + vec2f(f32(i), f32(j)) + vec2f(0.5);
-
-            let texel_pos_min = floor(sample_pos);
-            let texel_pos_max = floor(sample_pos + vec2f(1.0));
-            let texel_pos_center = texel_pos_min + vec2f(0.5);
-
-            var sample_rect_min = texel_pos_min;
-            var sample_rect_max = texel_pos_max;
-
-            let xfirst = i == 0;
-            let xlast = i == sample_texel_count.x - 1;
-            let yfirst = j == 0;
-            let ylast = j == sample_texel_count.y - 1;
-
-            if xfirst && !xlast {
-                sample_rect_min.x = sample_pos.x;
-            }
-            if !xfirst && xlast {
-                sample_rect_max.x = sample_pos.x;
-            }
-            if yfirst && !ylast {
-                sample_rect_min.y = sample_pos.y;
-            }
-            if !yfirst && ylast {
-                sample_rect_max.y = sample_pos.y;
-            }
-
-            if !xfirst && !xlast {
-                sample_rect_min.x = texel_pos_min.x;
-                sample_rect_max.x = texel_pos_max.x;
-            }
-            if !yfirst && !ylast {
-                sample_rect_min.y = texel_pos_min.y;
-                sample_rect_max.y = texel_pos_max.y;
-            }
-
-            let sample_rect_size = sample_rect_max - sample_rect_min;
-            let sample_area = sample_rect_size.x * sample_rect_size.y;
-
-            let sample_texel_coverage = sample_area;
-
-            total_coverage += sample_texel_coverage;
-            let uv = texel_pos_center / texture_size;
-            weighted_samples_sum +=
-                textureSample(tex_texture, tex_sampler, uv) * sample_texel_coverage;
+    var color = textureSample(tex_texture, tex_sampler, in.uv);
+    
+    switch render.tone_mapping {
+        case TONE_MAPPING_REINHARD: {
+            let tone_mapped = color.rgb / (luminance(color.rgb) + 1.0);
+            color.r = tone_mapped.r;
+            color.g = tone_mapped.g;
+            color.b = tone_mapped.b;
+        }
+        default: {
+            // Don't.
         }
     }
 
-    if total_coverage == 0.0 {
-        // this shouldnt happen but let's be careful
-        total_coverage = 1.0;
-    }
-    let sample_average = weighted_samples_sum / total_coverage;
-
-    let color = sample_average;
-
     return color;
+}
+
+fn luminance(v: vec3f) -> f32 {
+    return 0.2126 * v.r + 0.7152 * v.g + 0.0722 * v.b;
 }

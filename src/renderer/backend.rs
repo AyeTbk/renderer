@@ -2,10 +2,7 @@ use std::sync::Arc;
 
 use glam::UVec2;
 use pollster::FutureExt;
-use wgpu::{
-    util::{BufferInitDescriptor, DeviceExt},
-    BindGroupDescriptor,
-};
+use wgpu::{util::DeviceExt, BindGroupDescriptor};
 
 use super::visual_server::RenderTarget;
 
@@ -24,7 +21,6 @@ pub struct Backend {
     //
     show_texture_pipeline: wgpu::RenderPipeline,
     pub show_texture_bind_group_layout: wgpu::BindGroupLayout,
-    pub show_texture_uniform_buffer: wgpu::Buffer,
     //
     material_bind_group_layout: wgpu::BindGroupLayout,
     model_bind_group_layout: wgpu::BindGroupLayout,
@@ -177,13 +173,6 @@ impl Backend {
                     },
                 ],
             });
-        let show_texture_uniform_buffer = device.create_buffer_init(&BufferInitDescriptor {
-            label: Some("show texture uniform buffer"),
-            contents: bytemuck::cast_slice(&[ShowTextureUniform {
-                render_size: render_size.to_array(),
-            }]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("show texture shader"),
@@ -237,7 +226,6 @@ impl Backend {
             queue,
             show_texture_pipeline,
             show_texture_bind_group_layout,
-            show_texture_uniform_buffer,
             material_bind_group_layout,
             model_bind_group_layout,
         }
@@ -256,15 +244,6 @@ impl Backend {
         self.surface_config.width = render_size.x;
         self.surface_config.height = render_size.y;
         self.surface.configure(&self.device, &self.surface_config);
-
-        // self.update_uniform_buffer causes borrowchecker issues here so fuck it
-        self.queue.write_buffer(
-            &self.show_texture_uniform_buffer,
-            0,
-            bytemuck::cast_slice(&[ShowTextureUniform {
-                render_size: render_size.to_array(),
-            }]),
-        );
     }
 
     pub fn create_shader_module(&mut self, label: &str, source: &str) -> wgpu::ShaderModule {
@@ -528,5 +507,5 @@ impl<T> Vertexish for T where T: Clone + Copy + bytemuck::Pod + bytemuck::Zeroab
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct ShowTextureUniform {
-    render_size: [u32; 2],
+    pub tone_mapping: u32,
 }

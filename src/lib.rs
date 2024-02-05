@@ -4,6 +4,7 @@ pub use engine::Engine;
 pub mod arena;
 
 mod renderer;
+pub use self::renderer::visual_server::ToneMapping;
 pub use self::renderer::VisualServer;
 
 mod asset_server;

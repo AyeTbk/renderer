@@ -19,7 +19,7 @@ use crate::{
 };
 
 use super::{
-    backend::Backend,
+    backend::{Backend, ShowTextureUniform},
     pipeline2d::{
         self, glyph_instance::GlyphInstance, uibox_instance::UiBoxInstance, Pipeline2d,
         RenderCommandText, RenderCommandUiBoxes, RenderFullscreenTextureCommand,
@@ -82,12 +82,20 @@ impl VisualServer {
 
         let uibox_instance_buffer = backend.create_vertex_buffer::<UiBoxInstance>(&[]);
 
+        let settings = Settings {
+            render_size_factor: 1.0,
+            // FIXME The shader doesn't know about these, they're hardcoded right now. fix it
+            shadow_cascades: vec![(0.0, 0.05), (0.05, 0.1), (0.1, 0.3), (0.3, 1.0)],
+            tone_mapping: ToneMapping::Reinhard,
+        };
+
         let render_target_3d = create_render_target(
             backend.render_size(),
             1,
-            wgpu::TextureFormat::Rgba8UnormSrgb,
+            wgpu::TextureFormat::Rgba16Float,
             Backend::DEPTH_TEXTURE_FORMAT,
             &samplers.unfiltered,
+            settings.tone_mapping,
             &mut backend,
         );
 
@@ -97,6 +105,7 @@ impl VisualServer {
             wgpu::TextureFormat::Rgba8UnormSrgb,
             Backend::DEPTH_TEXTURE_FORMAT,
             &samplers.filtered,
+            ToneMapping::None,
             &mut backend,
         );
 
@@ -117,11 +126,7 @@ impl VisualServer {
 
         let mut this = Self {
             backend,
-            settings: Settings {
-                render_size_factor: 1.0,
-                // FIXME The shader doesn't know about these, they're hardcoded right now. fix it
-                shadow_cascades: vec![(0.0, 0.05), (0.05, 0.1), (0.1, 0.3), (0.3, 1.0)],
-            },
+            settings,
             //
             viewport_uniform_buffer,
             render_scene: Default::default(),
@@ -172,6 +177,15 @@ impl VisualServer {
 
     pub fn set_msaa(&mut self, sample_count: u32) {
         self.render_target_3d.sample_count = sample_count;
+        self.recreate_render_targets();
+    }
+
+    pub fn tone_mapping(&self) -> ToneMapping {
+        self.settings.tone_mapping
+    }
+
+    pub fn set_tone_mapping(&mut self, tone_mapping: ToneMapping) {
+        self.settings.tone_mapping = tone_mapping;
         self.recreate_render_targets();
     }
 
@@ -619,6 +633,7 @@ impl VisualServer {
             } else {
                 &self.samplers.unfiltered
             },
+            self.settings.tone_mapping,
             &mut self.backend,
         );
 
@@ -630,6 +645,7 @@ impl VisualServer {
             info.color_format,
             info.depth_format,
             &self.samplers.filtered,
+            ToneMapping::None,
             &mut self.backend,
         );
 
@@ -985,6 +1001,7 @@ pub struct RenderTarget {
     pub color_format: wgpu::TextureFormat,
     pub depth_format: wgpu::TextureFormat,
     pub texture: RenderTargetTexture,
+    pub backend_uniform_buffer: wgpu::Buffer,
     pub backend_bind_group: wgpu::BindGroup,
 }
 
@@ -1083,6 +1100,7 @@ fn create_render_target(
     color_format: wgpu::TextureFormat,
     depth_format: wgpu::TextureFormat,
     sampler: &wgpu::Sampler,
+    tone_mapping: ToneMapping,
     backend: &mut Backend,
 ) -> RenderTarget {
     let texture_size = wgpu::Extent3d {
@@ -1141,7 +1159,9 @@ fn create_render_target(
             depth,
         }
     };
-
+    let backend_uniform_buffer = backend.create_uniform_buffer(ShowTextureUniform {
+        tone_mapping: tone_mapping as u32,
+    });
     let backend_bind_group = backend
         .device
         .create_bind_group(&wgpu::BindGroupDescriptor {
@@ -1150,7 +1170,7 @@ fn create_render_target(
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: backend.show_texture_uniform_buffer.as_entire_binding(),
+                    resource: backend_uniform_buffer.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
@@ -1169,6 +1189,7 @@ fn create_render_target(
         depth_format,
         sample_count,
         texture,
+        backend_uniform_buffer,
         backend_bind_group,
     }
 }
@@ -1183,6 +1204,7 @@ pub struct TextDescriptor<'a> {
 struct Settings {
     render_size_factor: f32,
     shadow_cascades: Vec<(f32, f32)>,
+    tone_mapping: ToneMapping,
 }
 
 struct Samplers {
@@ -1190,4 +1212,12 @@ struct Samplers {
     unfiltered: wgpu::Sampler,
     filtered: wgpu::Sampler,
     shadow_map: wgpu::Sampler,
+}
+
+// Keep coherent with shader tyvm.
+#[repr(u32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToneMapping {
+    None = 0,
+    Reinhard = 1,
 }
