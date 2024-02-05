@@ -79,10 +79,10 @@ fn fs_signed_distance_field(in: VertexOutput) -> vec4f {
     
     // TODO: potential improvement: have these values automatically calculated from data about the sdffont
     // instead of hand picking them.
-    let fill_smoothcenter = 0.35;
-    let outline_smoothcenter = 0.7;
+    let fill_smoothcenter = 0.37;
+    let outline_smoothcenter = 0.8;
     var smoothing = clamp(
-        map_range(in.font_size, 12.0, 24.0, 0.3, 0.15),
+        map_range(in.font_size, 12.0, 24.0, 0.25, 0.15),
         0.1,
         0.9,
     );

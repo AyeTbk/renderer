@@ -98,9 +98,9 @@ impl<'a> UiBuilder<'a> {
             layout: Layout {
                 direction: LayoutDirection::Vertical,
                 h_extend: true,
-                height: 24.0 + 10.0, // button height + padding
-                padding: 10.0,
-                gap: 2.0,
+                height: 1.0, // Gets overriden below.
+                padding: BUTTON_GROUP_PADDING,
+                gap: BUTTON_GROUP_GAP,
                 ..Default::default()
             },
             ..Default::default()
@@ -133,7 +133,7 @@ impl<'a> UiBuilder<'a> {
         let mut node = Node::new_uibox(UiBox {
             layout: Layout {
                 h_extend: true,
-                height: 24.0,
+                height: 22.0,
                 padding: 10.0,
                 ..Default::default()
             },
@@ -142,7 +142,7 @@ impl<'a> UiBuilder<'a> {
                 hovered_color: Some(Color::new_rgb(0.22, 0.22, 0.25)),
                 pressed_color: Some(Color::new_rgb(0.16, 0.16, 0.19)),
                 active_color: Some(Color::new_rgb(0.3, 0.35, 0.45)),
-                font_size: 14.0,
+                font_size: 12.0,
                 ..Default::default()
             },
             text: Some(String::from(text)),
